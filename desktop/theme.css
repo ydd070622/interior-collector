@@ -31,3 +31,6 @@ html[data-theme="light"] .storage-path{background:#fafbfc}html[data-theme="dark"
 .custom-site-form{display:grid;grid-template-columns:1fr auto;gap:12px;border-top:1px solid var(--tone-51,#e5ddd1);margin-top:20px;padding-top:20px}.custom-site-form input{width:100%;min-width:0;border:1px solid var(--tone-51,#e5ddd1);background:var(--tone-7,#fffaf3);color:inherit;border-radius:6px;padding:10px 12px;height:39px}.custom-site-form>.primary{height:39px}.custom-site-advanced,.custom-site-form>small{grid-column:1/-1;color:var(--tone-20,#a4917a);font-size:11px}.custom-site-advanced summary{cursor:pointer}.custom-site-advanced>div{display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-top:12px}.custom-site-actions{display:flex;gap:6px;flex-wrap:wrap}.login-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.tabs{flex-wrap:wrap}.login-card{flex-wrap:wrap}@media(max-width:760px){.custom-site-advanced>div{grid-template-columns:1fr}.login-grid{grid-template-columns:1fr}}
 
 .case{content-visibility:auto;contain-intrinsic-size:auto 380px}.case img{background:var(--surface,#f7f8fa)}
+
+/* Keep sidebar utilities closer to the window bottom. */
+.sidebar{padding-bottom:12px}
