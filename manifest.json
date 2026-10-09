@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "室内灵感采集",
+  "version": "0.10.1",
+  "description": "自动识别网页室内设计图片，转换 PNG/JPG 并保存到授权文件夹。",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "采集本页室内设计图片"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'"
+  }
+}

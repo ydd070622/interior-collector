@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>室内灵感采集</title><link rel="stylesheet" href="style.css"></head>
+<body><header><div class="brand">◧ <strong>室内灵感采集</strong></div><button id="rescan">重新扫描</button></header>
+<main><section class="intro"><p id="source">正在读取当前网页…</p><div class="tag">仅室内图片 · 自动筛选</div></section>
+<section class="settings"><div><label for="format">输出格式</label><select id="format"><option value="png">PNG · 保留透明</option><option value="jpg">JPG · 白色底图</option></select></div><div><label for="quality">JPG 质量</label><select id="quality"><option value="1">100%</option><option value="0.95">95%</option><option value="0.9">90%</option></select></div><div class="folder"><label>保存位置</label><button id="folder">选择保存文件夹</button></div><small id="folderName">未选择时保存至 Chrome 下载目录 / 室内灵感</small></section>
+<section class="toolbar"><div><strong id="count">0 张室内图片</strong><span id="status" role="status" aria-live="polite">准备扫描</span></div><div><button id="stop" disabled>停止识别</button><button id="download" class="primary" disabled>下载全部室内图片</button></div></section>
+<progress id="progress" value="0" max="1"></progress><p id="notice">正在加载随插件提供的本地模型，收起弹窗后任务继续。图片在本机识别，不发送到 AI 服务。</p>
+<section id="grid" class="grid"></section><div id="empty" class="empty">室内图片将自动出现在这里<br><small>自动屏蔽图标、SVG 与无关内容，无需手动筛选。</small></div>
+<details><summary id="detailsTitle">采集记录</summary><ul id="logs"></ul></details>
+<footer>识别和保存期间请保持弹窗打开。未加载的图片请滚动网页后重新扫描。</footer>
+</main><script type="module" src="engine.js"></script></body></html>
