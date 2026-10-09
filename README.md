@@ -40,3 +40,7 @@ Chrome 室内设计图集采集扩展，当前版本 **0.10.1**。
 ## 运行资源
 
 随安装包提供 Transformers.js、ONNX Runtime WASM、Xenova/clip-vit-base-patch32 量化模型。第三方许可证保留在 vendor/ 和 models/ 中。
+
+## 拾室素材采集桌面软件
+
+桌面软件源码位于 [desktop](desktop/README.md)。可解压运行的 Windows 软件包见 Releases 中的 desktop 发布。浏览器插件保持独立使用。

@@ -1,0 +1,1 @@
+const fs=require('fs'),path=require('path');for(const folder of ['models','vendor'])fs.cpSync(path.join(__dirname,'..',folder),path.join(__dirname,'runtime',folder),{recursive:true});console.log('本地模型与运行库已准备好');
