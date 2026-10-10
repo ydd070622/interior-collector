@@ -20,3 +20,10 @@ html[data-theme=dark] #windowChrome button:hover{background:#343b45}
 html[data-theme=dark] #windowChrome button{color:#bac3ce}
 html[data-theme=dark] #windowChrome button:hover{background:#343b45;color:#f3f6fa}
 #windowChrome button[data-window-action=close]:hover,html[data-theme=dark] #windowChrome button[data-window-action=close]:hover{background:#c42b38;color:#fff}
+
+/* Keep native window controls available while the gallery scrolls. */
+#windowChrome{position:sticky;top:0;z-index:100;flex-shrink:0}
+
+
+/* Hide page scrolling only while the startup overlay is active. */
+html:has(body.startup-playing),body.startup-playing{overflow:hidden}

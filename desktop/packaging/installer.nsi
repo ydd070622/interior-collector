@@ -25,7 +25,7 @@ Section "安装"
   CreateShortcut "$SMPROGRAMS\拾室素材采集\卸载.lnk" "$INSTDIR\卸载.exe"
   WriteRegStr HKCU "Software\ShishiCollector" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShishiCollector" "DisplayName" "拾室素材采集"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShishiCollector" "DisplayVersion" "0.2.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShishiCollector" "DisplayVersion" "0.2.1"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShishiCollector" "UninstallString" '$\"$INSTDIR\卸载.exe$\"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShishiCollector" "DisplayIcon" "$INSTDIR\拾室素材采集.exe"
 SectionEnd

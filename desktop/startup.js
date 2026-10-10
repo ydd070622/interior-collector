@@ -25,7 +25,7 @@
     document.querySelector('.app').style.opacity = '';
     document.querySelector('.brand').style.visibility = '';
     document.body.classList.remove('startup-playing');
-    if (parameters.has('startupSplash')) window.desktop.startupComplete();
+
   }
   function onMessage(event) {
     if (event.source === frame.contentWindow && event.data?.type === 'shishi-startup-complete') finish();

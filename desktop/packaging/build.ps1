@@ -13,5 +13,5 @@ Copy-Item -LiteralPath (Join-Path $appRoot 'package.json') -Destination $sourceR
 foreach ($folder in 'assets','adapters','runtime') {
   Copy-Item -LiteralPath (Join-Path $appRoot $folder) -Destination $sourceRoot -Recurse -Force
 }
-& 'C:\Program Files (x86)\NSIS\makensis.exe' '/INPUTCHARSET' 'UTF8' "/DSTAGE=$stageRoot" "/DOUTPUT=$releaseRoot\拾室素材采集-0.2.0-安装程序.exe" (Join-Path $PSScriptRoot 'installer.nsi')
+& 'C:\Program Files (x86)\NSIS\makensis.exe' '/INPUTCHARSET' 'UTF8' "/DSTAGE=$stageRoot" "/DOUTPUT=$releaseRoot\拾室素材采集-0.2.1-安装程序.exe" (Join-Path $PSScriptRoot 'installer.nsi')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }

@@ -34,3 +34,5 @@ html[data-theme="light"] .storage-path{background:#fafbfc}html[data-theme="dark"
 
 /* Keep sidebar utilities closer to the window bottom. */
 .sidebar{padding-bottom:12px}
+
+.top[hidden]{display:none}
