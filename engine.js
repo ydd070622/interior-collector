@@ -2,22 +2,22 @@ import {readCoolPage,readCoolAlbum,advanceCoolPage} from './cool-de.js';
 import {readDesignPage,readDesignAlbum} from './design-sites.js';
 import {readZcoolPage,readZcoolAlbum,collectZcoolAlbums} from './zcool.js';
 import {api as chrome} from './background-api.js';
-import {imageSavePath} from './note-paths.js';
+import {imageSavePath,destinationNoteFolders,openNoteDirectory} from './note-paths.js';
 import {discoverListNotes} from './discover-notes.js';
 import {collectListAlbums} from './list-albums.js';
-import {readXhsPage} from './albums.js';
+import {readXhsPage,deduplicateImages} from './albums.js';
 import {scanPage} from './scan.js';
 import {loadDirectory,saveDirectory,uniqueFile} from './files.js';
 import {fetchImage,convertImage,thumbnail} from './images.js';
 const $ = id => document.getElementById(id);
-let sourceTab, noteLimit=null;
+let sourceTab, noteLimit=null, imageMode='interior';
 let directory, worker, active = false, saving = false, stopped = false;
 let items = [], workerId = 0;
 let workerReady;
 const pending = new Map();
 function status(text) { $('status').textContent = text; }
 function log(text) { const li = document.createElement('li'); li.textContent = text; $('logs').append(li); }
-function count() { $('count').textContent = `${items.length} 张室内图片`; $('empty').hidden = items.length > 0; }
+function count() { $('count').textContent = `${items.length} 张${imageMode==='all'?'':'室内'}图片`; $('empty').hidden = items.length > 0; }
 function controls() {
   $('rescan').disabled = active || saving; $('stop').disabled = !active;
   $('download').disabled = active || saving || !items.length;
@@ -60,7 +60,7 @@ function addCard(item) {
   const image = document.createElement('img'); image.src = item.preview; image.alt = item.label || '室内设计图片';
   const info = document.createElement('div'); info.className = 'info';
   const title = document.createElement('strong'); title.textContent = item.label || `室内灵感 ${String(items.length).padStart(3,'0')}`;
-  const meta = document.createElement('small'); meta.textContent = `${item.width} × ${item.height} · 室内匹配 ${Math.round(item.confidence*100)}%`;
+  const meta = document.createElement('small'); meta.textContent = `${item.width} × ${item.height}${item.confidence==null?' · 不限题材':' · 室内匹配 '+Math.round(item.confidence*100)+'%'}`;
   const button = document.createElement('button'); button.textContent = '下载图片'; button.disabled = active;
   button.onclick = () => download([item]);
   info.append(title,meta,button); card.append(image,info); $('grid').append(card); count();
@@ -70,7 +70,7 @@ async function scan() {
   active = true; stopped = false; controls();
   for (const item of items) URL.revokeObjectURL(item.preview);
   items = []; $('grid').replaceChildren(); $('logs').replaceChildren(); count();
-  $('progress').value = 0; startWorker();
+  $('progress').value = 0; if(imageMode==='interior')startWorker();
   let rejected = 0, failures = 0, frameFailures = 0;
   try {
     const tab = await chrome.tabs.get(sourceTab);
@@ -144,7 +144,7 @@ async function scan() {
         if(!pageImages.length)albumMessage=albumMessage||'没有取得案例首帖正文图片，请检查登录或访问提示';log(albumMessage);
       }catch(e){albumFailed=true;albumMessage='联盟案例读取失败：'+e.message;log(albumMessage);}
     }
-    const candidates = [...new Map(pageImages.map(i => [(i.noteId || '') + '|' + i.url,i])).values()];
+    const candidates = deduplicateImages(pageImages);
     $('progress').max = Math.max(1,candidates.length);
     log(`发现 ${candidates.length} 个去重后的候选；小图标和 SVG 已预先排除。`);
     const prepared=new Map();
@@ -163,7 +163,7 @@ async function scan() {
     for(let index=0;index<Math.min(3,candidates.length);index++)prefetch(index);
     for (let i = 0; i < candidates.length && !stopped; i++) {
       const item = candidates[i];
-      status(`自动识别 ${i+1} / ${candidates.length} · 已保留 ${items.length} 张`);
+      status(`${imageMode==='all'?'提取图片':'自动识别'} ${i+1} / ${candidates.length} · 已保留 ${items.length} 张`);
       const image=await prepared.get(i);prepared.delete(i);if(!stopped)prefetch(i+3);
       $('progress').value=i+1;
       if(image.error){failures++;log('图片读取失败：'+item.url+' · '+image.error);continue;}
@@ -171,15 +171,15 @@ async function scan() {
       const {thumb}=image;item.width=image.width;item.height=image.height;
       if (stopped) break;
       // A model error stops the scan; never substitute URL keywords for visual classification.
-      const result = await classify(thumb);
+      const result = imageMode==='all'?{keep:true,confidence:null}:await classify(thumb);
       if (stopped) break;
       if (!result.keep) { rejected++; continue; }
       Object.assign(item,{confidence:result.confidence,preview:URL.createObjectURL(thumb)});
       items.push(item); addCard(item);
     }
-    status(`${stopped ? '已停止' : '识别完成'} · 保留 ${items.length} 张 · 排除 ${rejected} 张 · 读取失败 ${failures} 张${frameFailures ? ' · 部分框架未扫描' : ''}`);
+    status(`${stopped ? '已停止' : imageMode==='all'?'提取完成':'识别完成'} · 保留 ${items.length} 张 · 排除 ${rejected} 张 · 读取失败 ${failures} 张${frameFailures ? ' · 部分框架未扫描' : ''}`);
     if(albumFailed) status('图集读取失败 · 尚未进入图片识别');
-    $('notice').textContent = albumMessage || '默认仅显示本地模型认定的室内图片。匹配分数是类别间的相对分数，可能存在误判或漏选。未加载图片请滚动原网页后重新扫描。';
+    $('notice').textContent = albumMessage || (imageMode==='all'?'不限图片题材，保留去重和尺寸过滤。':'默认仅显示本地模型认定的室内图片。匹配分数是类别间的相对分数，可能存在误判或漏选。未加载图片请滚动原网页后重新扫描。');
   } catch(e) {
     if (!stopped) { status(`采集未完成：${e.message}`); log(e.message); $('notice').textContent = '请确认 models 与 vendor 文件夹完整，然后重新加载插件。已完成识别的图片仍可下载。'; }
   } finally { active = false; controls(); }
@@ -219,16 +219,19 @@ async function download(selected) {
   let success = 0, failures = 0;
   try {
     if (await permission !== 'granted') throw new Error('未获得文件夹写入授权，请重新选择保存文件夹');
+    const folders=await destinationNoteFolders(items,destination,chrome.downloads);
     for (let i=0;i<selected.length;i++) {
       const item = selected[i]; let bitmap;
       status(`转换并保存 ${i+1} / ${selected.length}`);
       try {
         ({bitmap} = await fetchImage(item.url));
         const blob = await convertImage(bitmap,format,quality);
-        const {folder,name} = imageSavePath(item,items,format);
-        const relativePath=folder ? folder+'/'+name : name;
+        let {folder,name} = imageSavePath(item,items,format,folders);
+        let relativePath=folder ? folder+'/'+name : name;
         if (destination) {
-          const noteDirectory=folder ? await destination.getDirectoryHandle(folder,{create:true}) : destination;
+          const opened=folder ? await openNoteDirectory(destination,folder,folders,item.noteId) : {directory:destination,folder:null};
+          const noteDirectory=opened.directory;folder=opened.folder;
+          relativePath=folder ? folder+'/'+name : name;
           const file = await uniqueFile(noteDirectory,name);
           const writable = await file.createWritable();
           try { await writable.write(blob); await writable.close(); }
@@ -272,7 +275,7 @@ async function initialize() {
 
 let hasStarted=false,broadcastTimer;
 function snapshot() {
-  return {sourceTab,hasStarted,active,saving,items,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
+  return {sourceTab,imageMode,hasStarted,active,saving,items,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
 }
 function publish() {
   if(broadcastTimer)return;
@@ -285,12 +288,16 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   (async()=>{
     await engineInitialized;
     const payload=message.payload||{};
-    if(message.command==='scan' && !active && !saving){if(payload.noteLimit!=null&&(!Number.isSafeInteger(payload.noteLimit)||payload.noteLimit<1))throw new Error('采集篇数必须为正整数');sourceTab=payload.sourceTab;noteLimit=payload.noteLimit??null;hasStarted=true;scan();}
+    if(message.command==='scan' && !active && !saving){if(payload.noteLimit!=null&&(!Number.isSafeInteger(payload.noteLimit)||payload.noteLimit<1))throw new Error('采集篇数必须为正整数');sourceTab=payload.sourceTab;noteLimit=payload.noteLimit??null;imageMode=payload.imageMode==='all'?'all':'interior';hasStarted=true;scan();}
     else if(message.command==='stop')$('stop').onclick();
+    else if(message.command==='exclude' && !active && !saving){
+      if(!Number.isInteger(payload.index)||!items[payload.index])throw new Error('图片已变化，请重新选择');
+      items[payload.index].excluded=payload.excluded===true;publish();
+    }
     else if(message.command==='download' && !active && !saving){
       directory=await loadDirectory();
       $('format').value=payload.format||'png';$('quality').value=String(payload.quality||1);
-      const selected=payload.index===undefined?[...items]:items[payload.index]?[items[payload.index]]:[];
+      const selected=(payload.index===undefined?[...items]:items[payload.index]?[items[payload.index]]:[]).filter(item=>!item.excluded);
       if(selected.length)download(selected);
     }
     return {state:snapshot()};

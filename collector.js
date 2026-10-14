@@ -1,7 +1,8 @@
-import {imageSavePath} from './note-paths.js';
+import {enableImagePreview} from './preview.js';
+import {imageSavePath,destinationNoteFolders,openNoteDirectory} from './note-paths.js';
 import {discoverListNotes} from './discover-notes.js';
 import {collectListAlbums} from './list-albums.js';
-import {readXhsPage} from './albums.js';
+import {readXhsPage,deduplicateImages} from './albums.js';
 import {scanPage} from './scan.js';
 import {loadDirectory,saveDirectory,uniqueFile} from './files.js';
 import {fetchImage,convertImage,thumbnail} from './images.js';
@@ -52,7 +53,7 @@ async function classify(blob) {
 }
 function addCard(item) {
   const card = document.createElement('article'); card.className = 'card';
-  const image = document.createElement('img'); image.src = item.preview; image.alt = item.label || '室内设计图片';
+  const image = document.createElement('img'); image.src = item.preview; image.alt = item.label || '室内设计图片';enableImagePreview(image,item);
   const info = document.createElement('div'); info.className = 'info';
   const title = document.createElement('strong'); title.textContent = item.label || `室内灵感 ${String(items.length).padStart(3,'0')}`;
   const meta = document.createElement('small'); meta.textContent = `${item.width} × ${item.height} · 室内匹配 ${Math.round(item.confidence*100)}%`;
@@ -114,7 +115,7 @@ async function scan() {
         }
       } catch(e) { pageImages = []; albumMessage = '图集读取失败，请查看采集记录。'; log(albumMessage + ' ' + e.message); }
     }
-    const candidates = [...new Map(pageImages.map(i => [(i.noteId || '') + '|' + i.url,i])).values()];
+    const candidates = deduplicateImages(pageImages);
     $('progress').max = Math.max(1,candidates.length);
     log(`发现 ${candidates.length} 个去重后的候选；小图标和 SVG 已预先排除。`);
     for (let i = 0; i < candidates.length && !stopped; i++) {
@@ -178,16 +179,19 @@ async function download(selected) {
   let success = 0, failures = 0;
   try {
     if (await permission !== 'granted') throw new Error('未获得文件夹写入授权，请重新选择保存文件夹');
+    const folders=await destinationNoteFolders(items,destination,chrome.downloads);
     for (let i=0;i<selected.length;i++) {
       const item = selected[i]; let bitmap;
       status(`转换并保存 ${i+1} / ${selected.length}`);
       try {
         ({bitmap} = await fetchImage(item.url));
         const blob = await convertImage(bitmap,format,quality);
-        const {folder,name} = imageSavePath(item,items,format);
-        const relativePath=folder ? folder+'/'+name : name;
+        let {folder,name} = imageSavePath(item,items,format,folders);
+        let relativePath=folder ? folder+'/'+name : name;
         if (destination) {
-          const noteDirectory=folder ? await destination.getDirectoryHandle(folder,{create:true}) : destination;
+          const opened=folder ? await openNoteDirectory(destination,folder,folders,item.noteId) : {directory:destination,folder:null};
+          const noteDirectory=opened.directory;folder=opened.folder;
+          relativePath=folder ? folder+'/'+name : name;
           const file = await uniqueFile(noteDirectory,name);
           const writable = await file.createWritable();
           try { await writable.write(blob); await writable.close(); }

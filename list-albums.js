@@ -51,7 +51,12 @@ export async function collectListAlbums({sourceTab,notes,isStopped,onProgress,on
         const [result]=await api.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:fetchXhsNoteHtml,args:[note.href]});
         if(result.error)throw new Error(result.error.message||'详情读取失败');
         const state=parseInitialState(result.result);video=video||getNoteType(state,note.id)==='video';
-        if(!video)album=extractNoteAlbum(state,note.id,note.href);
+        if(!video) {
+          const doc=new DOMParser().parseFromString(result.result,'text/html');
+          const title=doc.querySelector('#detail-title, .note-content .title, .note-detail .title')?.textContent?.trim()
+            ||doc.title.replace(/\s*[-–—|]\s*小红书.*$/,'').trim();
+          album=extractNoteAlbum(state,note.id,note.href,/^小红书$/.test(title)?'':title);
+        }
       }catch(e){onLog(`笔记 ${i+1}：尝试加载详情页（${e.message}）`);}
       if(isStopped())break;
       if(!video&&!album.length){ const windowId=api.tabs?.get ? (await api.tabs.get(sourceTab)).windowId : undefined; album=await render({...note,windowId},isStopped,api); }

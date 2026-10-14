@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source=fs.readFileSync(new URL('../albums.js',import.meta.url),'utf8');
+const {readXhsPage,extractNoteAlbum,deduplicateImages}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const id='abcdef123456789012345678';
+const page='https://www.xiaohongshu.com/explore/'+id;
+const album=(host,count)=>({noteId:id,title:'测试笔记',imageList:Array.from({length:count},(_,i)=>({url:`https://${host}/image-${i}.jpg?size=${host}`}))});
+const state={cover:album('preview.example.com',1),detail:album('original.example.com',12),cached:album('cached.example.com',12)};
+globalThis.location={hostname:'www.xiaohongshu.com',pathname:'/explore/'+id,href:page};
+globalThis.window={__INITIAL_STATE__:state};
+globalThis.document={title:'测试笔记 - 小红书',querySelectorAll:()=>[],querySelector:()=>null};
+// Chrome injects this function without module scope.
+const injected=new Function('return ('+readXhsPage.toString()+')')();
+const rendered=injected().images;
+assert.equal(rendered.length,12);
+assert.equal(new Set(rendered.map(i=>i.imageIndex)).size,12);
+assert(rendered.every(i=>i.url.includes('original.example.com')));
+const parsed=extractNoteAlbum(state,id,page);
+assert.equal(parsed.length,12);
+assert(parsed.every(i=>i.url.includes('original.example.com')));
+const variants=parsed.map(i=>({...i,url:i.url.replace('original','another')}));
+assert.equal(deduplicateImages([...parsed,...variants]).length,12);
+assert.equal(deduplicateImages([...parsed,{...parsed[0],noteId:'another-note'}]).length,13);
+assert.equal(deduplicateImages([{url:'https://example.com/a'},{url:'https://example.com/a'},{url:'https://example.com/b'}]).length,2);
+assert.deepEqual(extractNoteAlbum({note:{...album('video.example.com',12),type:'video'}},id,page),[]);
+console.log('PASS: repeated state albums, cover vs full album, CDN variants, separate notes, ordinary images, video exclusion, injected function');

@@ -2,7 +2,7 @@
 export function readXhsPage() {
   if (!/(^|\.)xiaohongshu\.com$/i.test(location.hostname)) return null;
   const root = window.__INITIAL_STATE__ || window.__NUXT__;
-  const images = [], notes = [], seen = new WeakSet();
+  const albums = new Map(), notes = [], seen = new WeakSet();
   const detailId = location.pathname.match(/\/(?:explore|discovery\/item)\/([a-f0-9]{24})/i)?.[1];
   const ids = new Set(), videoIds=new Set();
   if(detailId&&[...document.querySelectorAll('video')].some(el=>{const r=el.getBoundingClientRect();return r.width>100&&r.height>100&&getComputedStyle(el).visibility!=='hidden';}))videoIds.add(detailId);
@@ -30,6 +30,16 @@ export function readXhsPage() {
       }
     } catch {}
   }
+  function titleFor(value,id) {
+    const title=[value.title,value.displayTitle,value.display_title].find(t=>typeof t==='string'&&t.trim());
+    if(title)return title.trim();
+    if(id!==detailId)return '未命名笔记';
+    const heading=document.querySelector('#detail-title, .note-content .title, .note-detail .title');
+    const domTitle=heading?.textContent?.trim();
+    if(domTitle)return domTitle;
+    const pageTitle=(document.title||'').replace(/\s*[-–—|]\s*小红书.*$/,'').trim();
+    return pageTitle&&!/^(小红书|小红书 - 你的生活指南)$/.test(pageTitle)?pageTitle:'未命名笔记';
+  }
   let visited=0;
   function walk(value,depth=0,inheritedId) {
     if (!value || typeof value!=='object' || depth>18 || seen.has(value) || ++visited>30000) return;
@@ -51,6 +61,7 @@ export function readXhsPage() {
     }
     const list=value.imageList || value.image_list;
     if (Array.isArray(list) && typeof id==='string' && /^[a-f0-9]{24}$/i.test(id) && (!detailId || id===detailId)) {
+      const images=[];
       if (value.type !== 'video') for (let index=0;index<list.length;index++) {
         const image=list[index];
         const info=image.infoList || image.info_list || [];
@@ -60,9 +71,11 @@ export function readXhsPage() {
         try {
           const url=new URL(raw.startsWith('//')?`https:${raw}`:raw,location.href);
           if (!/^https?:$/.test(url.protocol)) continue;
-          images.push({url:url.href,label:`${value.title || '笔记'} · ${index+1}/${list.length}`,width:0,height:0,page:location.href,noteId:id,noteTitle:value.title||'未命名笔记',imageIndex:index,album:true});
+          images.push({url:url.href,label:`${titleFor(value,id)} · ${index+1}/${list.length}`,width:0,height:0,page:location.href,noteId:id,noteTitle:titleFor(value,id),imageIndex:index,album:true});
         } catch {}
       }
+      const previous=albums.get(id);
+      if(images.length&&(!previous||images.length>previous.length))albums.set(id,images);
     }
     for (const [key,child] of Object.entries(value)) {
       if (/^(userInfo|author|comments|comment|recommend|recommendations)$/i.test(key)) continue;
@@ -71,7 +84,7 @@ export function readXhsPage() {
   }
   try { walk(root); } catch {}
   notes.sort((a,b)=>Math.round(a.visualTop/24)-Math.round(b.visualTop/24)||a.visualLeft-b.visualLeft);
-  return {images:images.filter(i=>!videoIds.has(i.noteId)),notes:notes.filter(n=>!videoIds.has(n.id)&&(!detailId||n.id===detailId)),skippedVideos:videoIds.size,videoNoteIds:[...videoIds].filter(Boolean),detailId,page:location.href};
+  return {images:[...albums.values()].flat().filter(i=>!videoIds.has(i.noteId)),notes:notes.filter(n=>!videoIds.has(n.id)&&(!detailId||n.id===detailId)),skippedVideos:videoIds.size,videoNoteIds:[...videoIds].filter(Boolean),detailId,page:location.href};
 }
 
 // Parse a JSON-like hydration object without evaluating scripts from a website.
@@ -93,24 +106,27 @@ export function parseInitialState(html) {
   throw new Error('详情页笔记数据不完整');
 }
 
-export function extractNoteAlbum(state,id,page) {
+export function extractNoteAlbum(state,id,page,fallbackTitle='') {
   if(getNoteType(state,id)==='video')return [];
-  const images=[],seen=new WeakSet();let visited=0;
+  let images=[];const seen=new WeakSet();let visited=0;
   function walk(value,depth=0) {
     if(!value||typeof value!=='object'||depth>18||seen.has(value)||++visited>30000)return;
     seen.add(value);
     const noteId=value.noteId||value.note_id||value.id;
     const list=value.imageList||value.image_list;
     if(noteId===id&&Array.isArray(list)&&value.type!=='video') {
+      const albumImages=[];
+      const title=[value.title,value.displayTitle,value.display_title,fallbackTitle].find(t=>typeof t==='string'&&t.trim())?.trim()||'未命名笔记';
       for(let index=0;index<list.length;index++) {
         const image=list[index], info=image.infoList||image.info_list||[];
         const preferred=info.find(x=>/WB_DFT|original/i.test(x.imageScene||x.image_scene||''));
         const raw=image.urlDefault||image.url_default||preferred?.url||image.url||image.urlPre||info.find(x=>x.url)?.url;
         if(typeof raw!=='string')continue;
         try { const url=new URL(raw.startsWith('//')?`https:${raw}`:raw,page);if(!/^https?:$/.test(url.protocol))continue;
-          images.push({url:url.href,label:`${value.title||'笔记'} · ${index+1}/${list.length}`,width:0,height:0,page,noteId:id,noteTitle:value.title||'未命名笔记',imageIndex:index,album:true});
+          albumImages.push({url:url.href,label:`${title} · ${index+1}/${list.length}`,width:0,height:0,page,noteId:id,noteTitle:title,imageIndex:index,album:true});
         }catch{}
       }
+      if(albumImages.length>images.length)images=albumImages;
     }
     for(const child of Object.values(value))walk(child,depth+1);
   }
@@ -125,4 +141,15 @@ export function getNoteType(state,targetId){
  if(id===targetId&&(String(kind).toLowerCase()==='video'||value.video?.media?.stream||card?.video?.media?.stream))video=true;
  for(const [key,child] of Object.entries(value))walk(child,depth+1,/^[a-f0-9]{24}$/i.test(key)?key:id);
  }walk(state);return video?'video':'unknown';
+}
+
+// Album slots identify a picture even when CDN hosts or resize parameters differ.
+export function deduplicateImages(images) {
+  const unique=new Map();
+  for(const image of images) {
+    const key=image.album&&image.noteId&&Number.isInteger(image.imageIndex)
+      ?image.noteId+'|slot:'+image.imageIndex:(image.noteId||'')+'|url:'+image.url;
+    if(!unique.has(key))unique.set(key,image);
+  }
+  return [...unique.values()];
 }

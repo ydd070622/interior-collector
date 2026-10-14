@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../engine.js',import.meta.url),'utf8');
+const begin=source.lastIndexOf('chrome.runtime.onMessage.addListener(');
+const end=source.indexOf('const engineInitialized=initialize();',begin);
+let listener,downloaded=[];
+const items=[{url:'a'},{url:'b'},{url:'c'}];
+const controls={format:{},quality:{}};
+const context={items,active:false,saving:false,engineInitialized:Promise.resolve(),chrome:{runtime:{onMessage:{addListener(fn){listener=fn;}}}},publish(){},snapshot:()=>({items}),loadDirectory:async()=>null,$:id=>controls[id],download:selected=>{downloaded=selected;}};
+vm.runInNewContext(source.slice(begin,end),context);
+const command=(name,payload)=>new Promise(resolve=>listener({type:'ENGINE_COMMAND',command:name,payload},null,resolve));
+await command('exclude',{index:2,excluded:true});assert.equal(items[2].excluded,true);
+await command('download',{});assert.deepEqual(Array.from(downloaded,i=>i.url),['a','b']);
+await command('download',{index:2});assert.deepEqual(Array.from(downloaded,i=>i.url),['a','b']);
+await command('exclude',{index:2,excluded:false});
+await command('download',{});assert.deepEqual(Array.from(downloaded,i=>i.url),['a','b','c']);
+context.saving=true;await command('exclude',{index:0,excluded:true});assert.equal(items[0].excluded,undefined);
+context.saving=false;assert.match((await command('exclude',{index:99,excluded:true})).error,/图片已变化/);
+console.log('PASS: exclude, batch skip, individual skip, restore, busy guard, invalid index');
+

@@ -1,3 +1,4 @@
+import {resolveCurrentPage} from './current-page.js';
 import {readCoolPage,scrollCoolDetail,advanceCoolPage} from './cool-de.js';
 import {readDesignPage,scrollDesignDetail} from './design-sites.js';
 import {advanceListPage} from './discover-notes.js';
@@ -26,6 +27,13 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 let engineCreating;
+chrome.windows.onFocusChanged.addListener(async id=>{
+  if(id===chrome.windows.WINDOW_ID_NONE)return;
+  try {
+    const window=await chrome.windows.get(id);
+    if(window.type==='normal')await chrome.storage.session.set({sourceWindowId:id});
+  } catch {}
+});
 async function ensureEngine() {
   const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[chrome.runtime.getURL('engine.html')]});
   if(contexts.length)return;
@@ -34,6 +42,12 @@ async function ensureEngine() {
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(sender.id!==chrome.runtime.id)return;
+  if(message.type==='CURRENT_SOURCE') {
+    (async()=>{
+      const {sourceWindowId}=await chrome.storage.session.get('sourceWindowId');
+      return {tab:await resolveCurrentPage(chrome,sourceWindowId)};
+    })().then(respond,error=>respond({error:error.message}));return true;
+  }
   if(message.type==='JOB') {
     (async()=>{
       await ensureEngine();
@@ -78,6 +92,7 @@ let collectorOpening;
 chrome.action.onClicked.addListener(tab=>{
  if(collectorOpening)return;
  collectorOpening=(async()=>{
+  await chrome.storage.session.set({sourceWindowId:tab.windowId});
   const base=chrome.runtime.getURL('collector.html');
   const url=base+'?tab='+tab.id;
   const windows=await chrome.windows.getAll({populate:true,windowTypes:['popup']});

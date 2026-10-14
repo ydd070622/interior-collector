@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source=fs.readFileSync(new URL('../current-page.js',import.meta.url),'utf8');
+const {resolveCurrentPage}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const browser=(id,tab,focused=false,url='https://www.xiaohongshu.com/explore/new')=>({id,focused,type:'normal',tabs:[{id:tab,active:true,url}]});
+let windows=[browser(1,11),browser(2,22)];
+const api={windows:{async getAll(options){assert.deepEqual(options.windowTypes,['normal']);return windows;},async getLastFocused(){return {id:2};}}};
+assert.equal((await resolveCurrentPage(api,2)).id,22);
+windows[0].focused=true;assert.equal((await resolveCurrentPage(api,2)).id,11);
+windows[0].focused=false;assert.equal((await resolveCurrentPage(api,999)).id,22);
+windows=[browser(2,23)];assert.equal((await resolveCurrentPage(api,1)).id,23);
+windows=[browser(2,23,false,'chrome://extensions')];await assert.rejects(resolveCurrentPage(api,2),/普通网页/);
+windows=[];await assert.rejects(resolveCurrentPage(api,2),/没有找到当前网页/);
+console.log('PASS: switched windows, focused browser, closed previous window, current active tab, internal page, no browser');
