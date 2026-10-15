@@ -42,7 +42,7 @@ export async function saveCases({selected,destination,downloads,format,quality,b
       const choice=await decide({title:incoming.title,total:incoming.images.length,matches:matches.map(m=>({
         id:m.key,libraryKey:m.library.key,title:m.record.title,folder:m.record.folder,location:m.library.name+'/'+m.record.folder,date:m.record.downloadedAt,sameSource:m.sameSource,shared:m.pairs.length,
         // Keep the original source identifiable even if images changed.
-        examples:m.pairs.slice(0,3).map(p=>({incoming:incoming.images[p.i].fp.preview,previous:m.record.images[p.j].fp.preview})),
+        examples:m.pairs.map(p=>({incoming:incoming.images[p.i].fp.preview,previous:m.record.images[p.j].fp.preview})),
         canMerge:!!m.record.folder,sourceUrls:m.record.sourceUrls||[]
       }))});
       if(choice.action==='skip'){skipped+=incoming.images.length;log('已跳过案例：'+incoming.title);continue;}

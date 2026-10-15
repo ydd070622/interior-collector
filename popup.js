@@ -43,6 +43,7 @@ function render(next) {
   state=next;$('source').textContent=next.source;$('status').textContent=next.status;$('notice').textContent=next.notice||'收起弹窗后任务仍会继续，再次打开可查看进度。';
   const selectedCount=next.items.filter(item=>!item.excluded).length;
   $('grid').hidden=!!next.casePrompt;
+  $('download').hidden=!!next.casePrompt;
   $('count').textContent=`${selectedCount} 张${next.imageMode==='all'?'':'室内'}图片${selectedCount<next.items.length?' · 已屏蔽 '+(next.items.length-selectedCount)+' 张':''}`;$('empty').hidden=!!next.items.length;
   if(next.casePrompt)$('empty').hidden=true;
   $('progress').max=next.max||1;$('progress').value=next.progress||0;
