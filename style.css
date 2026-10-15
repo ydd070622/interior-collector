@@ -60,6 +60,12 @@ body{min-width:0;height:100dvh}
 .grid .card.excluded .exclude-image::before,.grid .card.excluded .exclude-image::after{display:none}
 @media(hover:none){.grid .card .exclude-image{opacity:1}}
 /* Case history prompts stay visible while the background download waits. */
+.source-row { display:flex;align-items:center;gap:8px;flex-shrink:0;margin-bottom:10px; }
+.source-row #source { flex:1;min-width:0;margin:0; }
+.source-row button { display:flex;align-items:center;gap:6px;flex-shrink:0;padding:6px 8px;border:1px solid #d9cbb9;border-radius:6px;background:#fffdfa;color:#795637;font:inherit;font-size:11px; }
+.source-row button:hover:not(:disabled) { background:#f4eee5; }
+.panel-icon { width:17px;height:17px;flex-shrink:0; }
+#download.download-complete { background:#3f8055;color:#fff; }
 .case-prompt { display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden;margin:8px 0;padding:16px;border:1px solid #b9a58a;border-radius:12px;background:#fffaf2;color:inherit;font-size:15px; }
 .case-prompt[hidden] { display:none; }
 .case-prompt h3 { margin:0 0 12px;font-size:18px; }

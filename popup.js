@@ -1,7 +1,12 @@
 import {enableImagePreview} from './preview.js';
 import {renderCasePrompt} from './case-prompt.js';
 import {loadDirectory,saveDirectory,caseLibraryDirectory} from './files.js';
+import {resolveCaseDirectory} from './case-history.js';
 const $=id=>document.getElementById(id);
+$('openLibrary').onclick=async()=>{
+  try{const result=await chrome.runtime.sendMessage({type:'OPEN_LIBRARY'});if(result?.error)throw Error(result.error);}
+  catch(error){$('status').textContent='素材库打开失败：'+error.message;}
+};
 let state,sourceTab,rendered=[],listMode=false;
 function showFolder(directory){const name=directory?.name;$('folderName').textContent=name||'选择保存文件夹';$('folder').title=name?`保存到：${name}（点击更换文件夹）`:'点击选择保存文件夹；未选择时使用 Chrome 下载目录 / 室内灵感';}
 function configureScanRow(){const row=$('noteLimit').closest('.limit-row');row.hidden=false;row.querySelector('label').hidden=false;$('noteLimit').hidden=false;$('noteLimit').title='列表页设置采集篇数；单篇详情读取全部图片';}
@@ -35,7 +40,7 @@ function render(next) {
       const original=await caseLibraryDirectory(match.libraryKey);
       if(original){
         if(await original.requestPermission({mode:'readwrite'})!=='granted')throw Error('原文件夹未授权，可选择单独保存');
-        try{await original.getDirectoryHandle(match.folder);}catch{throw Error('原案例文件夹已移动或删除，可选择单独保存');}
+        try{await resolveCaseDirectory(original,match.folder);}catch{throw Error('原案例文件夹已移动或删除，可选择单独保存');}
       }
     }
     return job('case-decision',payload);
@@ -48,6 +53,9 @@ function render(next) {
   if(next.casePrompt)$('empty').hidden=true;
   $('progress').max=next.max||1;$('progress').value=next.progress||0;
   const busy=next.active||next.saving;
+  const completed=next.downloadComplete===true&&!busy;
+  $('download').classList.toggle('download-complete',completed);
+  $('download').textContent=completed?'下载完成✅':next.saving?'正在下载…':'下载全部图片 ↓';
   document.querySelectorAll('input[name=imageMode]').forEach(input=>input.disabled=busy);$('noteLimit').disabled=busy;$('rescan').textContent=listMode?'开始提取':'重新扫描';$('rescan').disabled=busy;$('stop').disabled=!next.active;$('download').disabled=busy||!selectedCount;
   $('folder').disabled=next.saving;$('format').disabled=next.saving;
   const previews=next.items.map(i=>i.preview);

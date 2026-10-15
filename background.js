@@ -1,4 +1,5 @@
 import {resolveCurrentPage} from './current-page.js';
+import {openLibraryWindow,isExtensionWindow} from './library-window.js';
 import {readCoolPage,scrollCoolDetail,advanceCoolPage} from './cool-de.js';
 import {readDesignPage,scrollDesignDetail} from './design-sites.js';
 import {advanceListPage} from './discover-notes.js';
@@ -27,11 +28,14 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 let engineCreating;
+let libraryOpening;
 chrome.windows.onFocusChanged.addListener(async id=>{
   if(id===chrome.windows.WINDOW_ID_NONE)return;
   try {
-    const window=await chrome.windows.get(id);
-    if(window.type==='normal')await chrome.storage.session.set({sourceWindowId:id});
+    const window=await chrome.windows.get(id,{populate:true});
+    // The collection window and the material library must never replace the page being collected.
+    if(window.type!=='normal'||await isExtensionWindow(chrome,id))return;
+    await chrome.storage.session.set({sourceWindowId:id});
   } catch {}
 });
 async function ensureEngine() {
@@ -42,6 +46,10 @@ async function ensureEngine() {
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(sender.id!==chrome.runtime.id)return;
+  if(message.type==='OPEN_LIBRARY'){
+    libraryOpening ||= openLibraryWindow(chrome).finally(()=>{libraryOpening=null;});
+    libraryOpening.then(()=>respond({ok:true}),error=>respond({error:error.message}));return true;
+  }
   if(message.type==='CURRENT_SOURCE') {
     (async()=>{
       const {sourceWindowId}=await chrome.storage.session.get('sourceWindowId');

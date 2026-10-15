@@ -5,6 +5,7 @@ let records=[],writes=[],choice={action:'merge',targetId:'case-history|old'},fai
 const pixels=seed=>Array.from({length:1024},(_,i)=>i%4===3?255:(Math.floor(i/4)*37+seed)%256);
 const fp=seed=>history.describePixels(pixels(seed),1200,800);
 globalThis.__caseDeps={...history,
+  withCaseHistoryLock:operation=>operation(),
   loadDirectoryCaseHistory:async()=>undefined,saveDirectoryCaseHistory:async(directory,value)=>{foreignSaved={directory,records:structuredClone(value)};},
   loadCaseLibraries:async()=>[{key:'case-history',name:'默认下载',directory:null,records:structuredClone(records)},...externalLibraries],
   loadCaseHistory:async()=>structuredClone(records),saveCaseHistory:async value=>{if(indexFail)throw Error('index full');records=structuredClone(value);},

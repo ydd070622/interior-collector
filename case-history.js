@@ -54,8 +54,15 @@ export function findCaseMatches(incoming,records) {
 }
 const indexName='.interior-case-history.json';
 const isImage=name=>/\.(png|jpe?g|webp|avif|gif|bmp)$/i.test(name);
+export async function resolveCaseDirectory(directory,relativePath) {
+  if(!relativePath)return directory;
+  const parts=String(relativePath).split('/');
+  if(parts.some(part=>!part||part==='.'||part==='..'||part.includes('\\')))throw Error('案例目录路径不合法');
+  for(const part of parts)directory=await directory.getDirectoryHandle(part);
+  return directory;
+}
 export async function refreshCaseRecord(directory,record,onProgress=()=>{}) {
-  const handle=await directory.getDirectoryHandle(record.folder);
+  const handle=await resolveCaseDirectory(directory,record.folder);
   const images=[];
   for await(const [name,fileHandle]of handle.entries()){
     if(fileHandle.kind!=='file'||!isImage(name))continue;
@@ -74,11 +81,13 @@ export async function readFolderHistory(directory,onProgress=()=>{},cachedRecord
     catch(e){if(e.name!=='NotFoundError')throw Error('无法读取案例历史：'+e.message);}
   }
   const current=[];
-  for await(const [folder,handle]of directory.entries()){
-    if(handle.kind!=='directory'||folder.startsWith('.'))continue;
-    const record=records.find(r=>r.folder===folder)||{id:crypto.randomUUID(),folder,title:folder.replace(/^\d+-/,''),sources:[],sourceUrls:[],images:[],imported:true};
+  async function visit(handle,folder,depth){
+    if(depth>40)throw Error('目录层级超过40层，请选择更具体的素材文件夹');
+    const record=records.find(r=>r.folder===folder)||{id:crypto.randomUUID(),folder,title:(folder.split('/').pop()||directory.name||'未命名案例').replace(/^\d+-/,''),sources:[],sourceUrls:[],images:[],imported:true};
     const images=[];
+    const children=[];
     for await(const [name,fileHandle]of handle.entries()){
+      if(fileHandle.kind==='directory'&&!name.startsWith('.')){children.push([name,fileHandle]);continue;}
       if(fileHandle.kind!=='file'||!isImage(name))continue;
       const file=await fileHandle.getFile(),cached=record.images.find(i=>i.name===name&&i.size===file.size&&i.modified===file.lastModified);
       if(cached){images.push(cached);continue;}
@@ -86,7 +95,9 @@ export async function readFolderHistory(directory,onProgress=()=>{},cachedRecord
       let bitmap;try{bitmap=await createImageBitmap(file);images.push({name,size:file.size,modified:file.lastModified,fp:await fingerprint(bitmap)});}catch(e){throw Error('旧图片读取失败：'+folder+'/'+name+' · '+e.message);}finally{bitmap?.close();}
     }
     if(images.length)current.push({...record,images});
+    for(const [name,child]of children)await visit(child,folder?folder+'/'+name:name,depth+1);
   }
+  await visit(directory,'',0);
   return current;
 }
 // Call only after the imported index has been durably saved inside the extension.

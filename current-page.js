@@ -1,5 +1,6 @@
 export async function resolveCurrentPage(api,preferredWindowId) {
-  const windows=await api.windows.getAll({populate:true,windowTypes:['normal']});
+  const extensionOrigin=api.runtime?.getURL?.('');
+  const windows=(await api.windows.getAll({populate:true,windowTypes:['normal']})).filter(window=>!extensionOrigin||!window.tabs?.find(tab=>tab.active)?.url?.startsWith(extensionOrigin));
   let last;
   try { last=await api.windows.getLastFocused({windowTypes:['normal']}); } catch {}
   const window=windows.find(w=>w.focused)

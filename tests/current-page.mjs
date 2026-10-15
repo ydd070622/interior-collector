@@ -12,3 +12,7 @@ windows=[browser(2,23)];assert.equal((await resolveCurrentPage(api,1)).id,23);
 windows=[browser(2,23,false,'chrome://extensions')];await assert.rejects(resolveCurrentPage(api,2),/普通网页/);
 windows=[];await assert.rejects(resolveCurrentPage(api,2),/没有找到当前网页/);
 console.log('PASS: switched windows, focused browser, closed previous window, current active tab, internal page, no browser');
+windows=[browser(50,500,true,'chrome-extension://self/library.html'),browser(2,22,false,'https://example.com/design')];
+api.runtime={getURL:()=> 'chrome-extension://self/'};
+assert.equal((await resolveCurrentPage(api,2)).id,22);
+console.log('PASS: focused library window does not replace the collection source');

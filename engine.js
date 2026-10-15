@@ -14,6 +14,7 @@ let sourceTab, noteLimit=null, imageMode='interior';
 let directory, worker, active = false, saving = false, stopped = false;
 let items = [], workerId = 0;
 let workerReady;
+let downloadComplete=false;
 let casePrompt=null,caseDecision=null;
 function decideCase(prompt) {
   casePrompt={...prompt,token:crypto.randomUUID()};
@@ -74,7 +75,7 @@ function addCard(item) {
 }
 async function scan() {
   if (active || saving) return;
-  active = true; stopped = false; controls();
+  active = true; stopped = false; downloadComplete=false; controls();
   for (const item of items) URL.revokeObjectURL(item.preview);
   items = []; $('grid').replaceChildren(); $('logs').replaceChildren(); count();
   $('progress').value = 0; if(imageMode==='interior')startWorker();
@@ -220,15 +221,16 @@ async function download(selected) {
   if (saving || active) return;
   // Called immediately from the click handler so directory permission has a user gesture.
   const permission = directory ? directory.queryPermission({mode:'readwrite'}) : Promise.resolve('granted');
-  saving = true; controls();
+  saving = true; downloadComplete=false; controls();
   const format = $('format').value, quality = Number($('quality').value);
   const destination = directory;
   try {
     if (await permission !== 'granted') throw new Error('未获得文件夹写入授权，请重新选择保存文件夹');
     const result=await saveCases({selected,destination,downloads:chrome.downloads,format,quality,browserDownload,decide:decideCase,status,log});
+    downloadComplete=result.failures===0&&result.success>0&&selected.length===items.filter(item=>!item.excluded).length;
     status(`保存完成 · 成功 ${result.success} 张 · 跳过 ${result.skipped} 张 · 失败 ${result.failures} 张`);
   } catch(e) { status(e.message); log(e.message); }
-  finally { saving = false; controls(); }
+  finally { saving = false; controls(); publish(); }
 }
 $('folder').onclick = async () => {
   try {
@@ -260,7 +262,7 @@ async function initialize() {
 
 let hasStarted=false,broadcastTimer;
 function snapshot() {
-  return {sourceTab,imageMode,hasStarted,active,saving,items,casePrompt,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
+  return {sourceTab,imageMode,hasStarted,active,saving,downloadComplete,items,casePrompt,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
 }
 function publish() {
   if(broadcastTimer)return;
@@ -283,7 +285,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     else if(message.command==='stop')$('stop').onclick();
     else if(message.command==='exclude' && !active && !saving){
       if(!Number.isInteger(payload.index)||!items[payload.index])throw new Error('图片已变化，请重新选择');
-      items[payload.index].excluded=payload.excluded===true;publish();
+      items[payload.index].excluded=payload.excluded===true;downloadComplete=false;publish();
     }
     else if(message.command==='download' && !active && !saving){
       directory=await loadDirectory();

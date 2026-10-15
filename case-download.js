@@ -1,9 +1,12 @@
-import {loadCaseHistory,saveCaseHistory,loadDirectoryCaseHistory,saveDirectoryCaseHistory,loadCaseLibraries,uniqueFile} from './files.js';
+import {loadCaseHistory,saveCaseHistory,loadDirectoryCaseHistory,saveDirectoryCaseHistory,loadCaseLibraries,uniqueFile,withCaseHistoryLock} from './files.js';
 import {safeTitle,openNoteDirectory} from './note-paths.js';
 import {fetchImage,convertImage} from './images.js';
-import {sourceIdentity,originalSourceUrl,fingerprint,findCaseMatches,matchImages,refreshCaseRecord,readFolderHistory,removeLegacyFolderHistory} from './case-history.js';
+import {sourceIdentity,originalSourceUrl,fingerprint,findCaseMatches,matchImages,refreshCaseRecord,readFolderHistory,removeLegacyFolderHistory,resolveCaseDirectory} from './case-history.js';
 
 export async function saveCases({selected,destination,downloads,format,quality,browserDownload,decide,status,log}) {
+  return withCaseHistoryLock(()=>saveCasesUnlocked({selected,destination,downloads,format,quality,browserDownload,decide,status,log}));
+}
+async function saveCasesUnlocked({selected,destination,downloads,format,quality,browserDownload,decide,status,log}) {
   const persist=records=>destination?saveDirectoryCaseHistory(destination,records):saveCaseHistory(records);
   let records=destination?await readFolderHistory(destination,status,await loadDirectoryCaseHistory(destination)):await loadCaseHistory();
   if(!destination){
@@ -43,7 +46,7 @@ export async function saveCases({selected,destination,downloads,format,quality,b
         id:m.key,libraryKey:m.library.key,title:m.record.title,folder:m.record.folder,location:m.library.name+'/'+m.record.folder,date:m.record.downloadedAt,sameSource:m.sameSource,shared:m.pairs.length,
         // Keep the original source identifiable even if images changed.
         examples:m.pairs.map(p=>({incoming:incoming.images[p.i].fp.preview,previous:m.record.images[p.j].fp.preview})),
-        canMerge:!!m.record.folder,sourceUrls:m.record.sourceUrls||[]
+        canMerge:m.library.directory!=null||!!m.record.folder,sourceUrls:m.record.sourceUrls||[]
       }))});
       if(choice.action==='skip'){skipped+=incoming.images.length;log('已跳过案例：'+incoming.title);continue;}
       if(choice.action==='merge'){
@@ -63,7 +66,7 @@ export async function saveCases({selected,destination,downloads,format,quality,b
     let noteDirectory;
     const targetRecords=targetLibrary.records,targetDirectory=targetLibrary.directory;
     if(targetDirectory){
-      if(targetRecords.includes(target))noteDirectory=await targetDirectory.getDirectoryHandle(target.folder);
+      if(targetRecords.includes(target))noteDirectory=await resolveCaseDirectory(targetDirectory,target.folder);
       else {const map=new Map();const opened=await openNoteDirectory(targetDirectory,target.folder,map,source);noteDirectory=opened.directory;target.folder=opened.folder;}
     }
     let number=target.images.reduce((n,i)=>Math.max(n,Number(i.name?.match(/^(\d+)/)?.[1]||0)),0);
