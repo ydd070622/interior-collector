@@ -2,18 +2,25 @@ import {readCoolPage,readCoolAlbum,advanceCoolPage} from './cool-de.js';
 import {readDesignPage,readDesignAlbum} from './design-sites.js';
 import {readZcoolPage,readZcoolAlbum,collectZcoolAlbums} from './zcool.js';
 import {api as chrome} from './background-api.js';
-import {imageSavePath,destinationNoteFolders,openNoteDirectory} from './note-paths.js';
 import {discoverListNotes} from './discover-notes.js';
 import {collectListAlbums} from './list-albums.js';
 import {readXhsPage,deduplicateImages} from './albums.js';
 import {scanPage} from './scan.js';
-import {loadDirectory,saveDirectory,uniqueFile} from './files.js';
-import {fetchImage,convertImage,thumbnail} from './images.js';
+import {loadDirectory,saveDirectory} from './files.js';
+import {fetchImage,thumbnail} from './images.js';
+import {saveCases} from './case-download.js';
 const $ = id => document.getElementById(id);
 let sourceTab, noteLimit=null, imageMode='interior';
 let directory, worker, active = false, saving = false, stopped = false;
 let items = [], workerId = 0;
 let workerReady;
+let casePrompt=null,caseDecision=null;
+function decideCase(prompt) {
+  casePrompt={...prompt,token:crypto.randomUUID()};
+  status('发现可能重复的案例，请选择合并、单独保存或跳过');
+  publish();
+  return new Promise(resolve=>{caseDecision=resolve;});
+}
 const pending = new Map();
 function status(text) { $('status').textContent = text; }
 function log(text) { const li = document.createElement('li'); li.textContent = text; $('logs').append(li); }
@@ -192,7 +199,7 @@ async function browserDownload(blob, filename) {
     const finish = error => {
       if (settled) return; settled = true; clearTimeout(timer);
       chrome.downloads.onChanged.removeListener(changed); URL.revokeObjectURL(url);
-      error ? reject(error) : resolve();
+      error ? reject(error) : resolve({id});
     };
     const changed = delta => {
       if (delta.id !== id) return;
@@ -216,32 +223,10 @@ async function download(selected) {
   saving = true; controls();
   const format = $('format').value, quality = Number($('quality').value);
   const destination = directory;
-  let success = 0, failures = 0;
   try {
     if (await permission !== 'granted') throw new Error('未获得文件夹写入授权，请重新选择保存文件夹');
-    const folders=await destinationNoteFolders(items,destination,chrome.downloads);
-    for (let i=0;i<selected.length;i++) {
-      const item = selected[i]; let bitmap;
-      status(`转换并保存 ${i+1} / ${selected.length}`);
-      try {
-        ({bitmap} = await fetchImage(item.url));
-        const blob = await convertImage(bitmap,format,quality);
-        let {folder,name} = imageSavePath(item,items,format,folders);
-        let relativePath=folder ? folder+'/'+name : name;
-        if (destination) {
-          const opened=folder ? await openNoteDirectory(destination,folder,folders,item.noteId) : {directory:destination,folder:null};
-          const noteDirectory=opened.directory;folder=opened.folder;
-          relativePath=folder ? folder+'/'+name : name;
-          const file = await uniqueFile(noteDirectory,name);
-          const writable = await file.createWritable();
-          try { await writable.write(blob); await writable.close(); }
-          catch(e) { await writable.abort().catch(()=>{}); throw e; }
-        } else await browserDownload(blob,relativePath);
-        success++; log(`已保存：${relativePath}`);
-      } catch(e) { failures++; log(`保存失败：${item.url} · ${e.message}`); }
-      finally { bitmap?.close(); }
-    }
-    status(`保存完成 · 成功 ${success} 张 · 失败 ${failures} 张`);
+    const result=await saveCases({selected,destination,downloads:chrome.downloads,format,quality,browserDownload,decide:decideCase,status,log});
+    status(`保存完成 · 成功 ${result.success} 张 · 跳过 ${result.skipped} 张 · 失败 ${result.failures} 张`);
   } catch(e) { status(e.message); log(e.message); }
   finally { saving = false; controls(); }
 }
@@ -275,7 +260,7 @@ async function initialize() {
 
 let hasStarted=false,broadcastTimer;
 function snapshot() {
-  return {sourceTab,imageMode,hasStarted,active,saving,items,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
+  return {sourceTab,imageMode,hasStarted,active,saving,items,casePrompt,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
 }
 function publish() {
   if(broadcastTimer)return;
@@ -288,6 +273,12 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   (async()=>{
     await engineInitialized;
     const payload=message.payload||{};
+    if(message.command==='case-decision'){
+      if(!casePrompt||payload.token!==casePrompt.token)throw new Error('提示已过期，请重新查看');
+      if(!['skip','separate','merge'].includes(payload.action))throw new Error('未知的案例操作');
+      if(payload.action==='merge'&&!casePrompt.matches.some(m=>m.id===payload.targetId&&m.canMerge))throw new Error('找不到合并目标');
+      const resolve=caseDecision;casePrompt=null;caseDecision=null;resolve(payload);publish();
+    }
     if(message.command==='scan' && !active && !saving){if(payload.noteLimit!=null&&(!Number.isSafeInteger(payload.noteLimit)||payload.noteLimit<1))throw new Error('采集篇数必须为正整数');sourceTab=payload.sourceTab;noteLimit=payload.noteLimit??null;imageMode=payload.imageMode==='all'?'all':'interior';hasStarted=true;scan();}
     else if(message.command==='stop')$('stop').onclick();
     else if(message.command==='exclude' && !active && !saving){

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "室内灵感采集",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "自动识别网页室内设计图片，转换 PNG/JPG 并保存到授权文件夹。",
   "minimum_chrome_version": "116",
   "permissions": [

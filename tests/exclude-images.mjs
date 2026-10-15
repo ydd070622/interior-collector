@@ -18,4 +18,13 @@ await command('download',{});assert.deepEqual(Array.from(downloaded,i=>i.url),['
 context.saving=true;await command('exclude',{index:0,excluded:true});assert.equal(items[0].excluded,undefined);
 context.saving=false;assert.match((await command('exclude',{index:99,excluded:true})).error,/图片已变化/);
 console.log('PASS: exclude, batch skip, individual skip, restore, busy guard, invalid index');
+let decision;
+context.casePrompt={token:'current',matches:[{id:'old',canMerge:true}]};
+context.caseDecision=value=>{decision=value;};
+assert.match((await command('case-decision',{token:'stale',action:'merge',targetId:'old'})).error,/过期/);
+assert.match((await command('case-decision',{token:'current',action:'merge',targetId:'unknown'})).error,/合并目标/);
+await command('case-decision',{token:'current',action:'merge',targetId:'old'});
+assert.equal(decision.action,'merge');assert.equal(context.casePrompt,null);
+assert.match((await command('case-decision',{token:'current',action:'skip'})).error,/过期/);
+console.log('PASS: stale prompts, validated merge targets, decisions resolve once');
 

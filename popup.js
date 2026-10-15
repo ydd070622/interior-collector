@@ -1,5 +1,6 @@
 import {enableImagePreview} from './preview.js';
-import {loadDirectory,saveDirectory} from './files.js';
+import {renderCasePrompt} from './case-prompt.js';
+import {loadDirectory,saveDirectory,caseLibraryDirectory} from './files.js';
 const $=id=>document.getElementById(id);
 let state,sourceTab,rendered=[],listMode=false;
 function showFolder(directory){const name=directory?.name;$('folderName').textContent=name||'选择保存文件夹';$('folder').title=name?`保存到：${name}（点击更换文件夹）`:'点击选择保存文件夹；未选择时使用 Chrome 下载目录 / 室内灵感';}
@@ -28,9 +29,22 @@ async function job(command,payload={}) {
   return result?.state;
 }
 function render(next) {
+  renderCasePrompt(next.casePrompt,async payload=>{
+    if(payload.action==='merge'){
+      const match=next.casePrompt.matches.find(m=>m.id===payload.targetId);
+      const original=await caseLibraryDirectory(match.libraryKey);
+      if(original){
+        if(await original.requestPermission({mode:'readwrite'})!=='granted')throw Error('原文件夹未授权，可选择单独保存');
+        try{await original.getDirectoryHandle(match.folder);}catch{throw Error('原案例文件夹已移动或删除，可选择单独保存');}
+      }
+    }
+    return job('case-decision',payload);
+  });
   state=next;$('source').textContent=next.source;$('status').textContent=next.status;$('notice').textContent=next.notice||'收起弹窗后任务仍会继续，再次打开可查看进度。';
   const selectedCount=next.items.filter(item=>!item.excluded).length;
+  $('grid').hidden=!!next.casePrompt;
   $('count').textContent=`${selectedCount} 张${next.imageMode==='all'?'':'室内'}图片${selectedCount<next.items.length?' · 已屏蔽 '+(next.items.length-selectedCount)+' 张':''}`;$('empty').hidden=!!next.items.length;
+  if(next.casePrompt)$('empty').hidden=true;
   $('progress').max=next.max||1;$('progress').value=next.progress||0;
   const busy=next.active||next.saving;
   document.querySelectorAll('input[name=imageMode]').forEach(input=>input.disabled=busy);$('noteLimit').disabled=busy;$('rescan').textContent=listMode?'开始提取':'重新扫描';$('rescan').disabled=busy;$('stop').disabled=!next.active;$('download').disabled=busy||!selectedCount;

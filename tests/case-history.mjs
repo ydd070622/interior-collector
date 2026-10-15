@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source=fs.readFileSync(new URL('../case-history.js',import.meta.url),'utf8');
+const {describePixels,imageDistance,matchImages,findCaseMatches,sourceIdentity,readFolderHistory,removeLegacyFolderHistory}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const pixels=seed=>Array.from({length:1024},(_,i)=>i%4===3?255:(Math.floor(i/4)*37+seed)%256);
+const a=describePixels(pixels(0),1200,800),b=describePixels(pixels(80),1200,800);
+const compressed={...a,rgb:a.rgb.map(v=>Math.min(255,v+2))};
+assert.equal(imageDistance(a,a),0);assert.ok(Number.isFinite(imageDistance(a,compressed)));assert.equal(imageDistance(a,b),Infinity);
+assert.equal(imageDistance(a,{...a,ratio:1}),Infinity);
+assert.equal(matchImages([{fp:a},{fp:a}],[{fp:a}]).length,1,'one old image must not count twice');
+const old={id:'old',title:'原案例',images:[{fp:a},{fp:b}],sources:['example.com|123']};
+assert.equal(findCaseMatches({source:'other',images:[{fp:a},{fp:b}]},[old]).length,1,'cross site overlap');
+assert.equal(findCaseMatches({source:'other',images:[{fp:a},{fp:describePixels(pixels(150),1200,800)}]},[old]).length,0,'one shared photo does not merge multi-photo cases');
+assert.equal(findCaseMatches({source:'example.com|123',images:[{fp:describePixels(pixels(150),1200,800)}]},[old])[0].sameSource,true);
+assert.equal(sourceIdentity({page:'https://www.example.com/page?utm_source=x#top',noteId:'123'}),'example.com|123');
+assert.notEqual(sourceIdentity({page:'https://one.com/a',noteId:'123'}),sourceIdentity({page:'https://two.com/a',noteId:'123'}));
+// Existing cached images can be read without touching or decoding original files.
+const cached={...old,folder:'22-原案例',images:[{name:'001.png',size:42,modified:99,fp:a}]};
+const folder={async *entries(){yield ['001.png',{kind:'file',getFile:async()=>({size:42,lastModified:99})}];}};
+let removed=false;
+const directory={async removeEntry(name){assert.equal(name,'.interior-case-history.json');removed=true;},async getFileHandle(name,opts){assert.equal(opts,undefined,'never create an index file');return {getFile:async()=>({text:async()=>JSON.stringify({version:1,records:[cached]})})};},async *entries(){yield ['22-原案例',{kind:'directory',...folder}];}};
+assert.equal((await readFolderHistory(directory))[0].images.length,1);
+await removeLegacyFolderHistory(directory);assert.equal(removed,true);
+assert.equal((await readFolderHistory({...directory,getFileHandle(){throw Error('internal cache should bypass sidecar');}},()=>{},[cached]))[0].images.length,1);
+await assert.rejects(readFolderHistory({...directory,getFileHandle:async()=>{throw new Error('corrupt');}}),/无法读取案例历史/);
+console.log('PASS: image content matching, compression tolerance, distinct views, one-to-one overlap, cross-site cases, source identity, folder index persistence');

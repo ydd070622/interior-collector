@@ -23,6 +23,64 @@ export async function saveDirectory(handle) {
     tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
   });
 }
+export async function loadCaseHistory() {
+  const database = await db();
+  return new Promise((resolve,reject) => {
+    const r=database.transaction('settings').objectStore('settings').get('case-history');
+    r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);
+  });
+}
+export async function saveCaseHistory(records) {
+  const database = await db();
+  return new Promise((resolve,reject) => {
+    const tx=database.transaction('settings','readwrite');
+    tx.objectStore('settings').put(records,'case-history');
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+  });
+}
+async function readSetting(key) {
+  const database=await db();
+  return new Promise((resolve,reject)=>{
+    const request=database.transaction('settings').objectStore('settings').get(key);
+    request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+  });
+}
+async function writeSetting(key,value) {
+  const database=await db();
+  return new Promise((resolve,reject)=>{
+    const tx=database.transaction('settings','readwrite');tx.objectStore('settings').put(value,key);
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('索引保存中断'));
+  });
+}
+async function directoryHistoryKey(directory) {
+  const entries=await readSetting('case-directories')||[];
+  for(const entry of entries){try{if(await directory.isSameEntry(entry.handle))return 'case-directory:'+entry.id;}catch{/* A removed folder must not block other libraries. */}}
+  const id=crypto.randomUUID();entries.push({id,handle:directory});
+  await writeSetting('case-directories',entries);return 'case-directory:'+id;
+}
+export async function loadDirectoryCaseHistory(directory) {
+  return readSetting(await directoryHistoryKey(directory));
+}
+export async function saveDirectoryCaseHistory(directory,records) {
+  await writeSetting(await directoryHistoryKey(directory),records);
+}
+// Enumerate stored fingerprints only; other roots are not rescanned for every download.
+export async function loadCaseLibraries() {
+  const entries=await readSetting('case-directories')||[];
+  const libraries=[{key:'case-history',name:'默认下载／室内灵感',directory:null,records:await loadCaseHistory()}];
+  for(const entry of entries){
+    const key='case-directory:'+entry.id;
+    libraries.push({key,name:entry.handle.name||'保存文件夹',directory:entry.handle,records:await readSetting(key)||[]});
+  }
+  return libraries;
+}
+export async function caseLibraryDirectory(key) {
+  if(key==='case-history')return null;
+  const entries=await readSetting('case-directories')||[];
+  const entry=entries.find(e=>'case-directory:'+e.id===key);
+  if(!entry)throw new Error('找不到原保存文件夹，请重新选择该文件夹建立索引');
+  return entry.handle;
+}
 export async function uniqueFile(directory, name) {
   const dot = name.lastIndexOf('.');
   for (let i = 0; i < 10000; i++) {

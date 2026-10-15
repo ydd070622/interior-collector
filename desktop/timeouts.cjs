@@ -1,1 +1,0 @@
-async function bounded(operation,ms,message,cancel=()=>{}){let timer;try{return await Promise.race([Promise.resolve().then(operation),new Promise((_,reject)=>{timer=setTimeout(()=>{const e=Error(message);e.code='PAGE_TIMEOUT';reject(e);try{cancel();}catch{}},ms);})]);}finally{clearTimeout(timer);}}module.exports={bounded};
