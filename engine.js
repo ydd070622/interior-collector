@@ -5,12 +5,15 @@ import {api as chrome} from './background-api.js';
 import {discoverListNotes} from './discover-notes.js';
 import {collectListAlbums} from './list-albums.js';
 import {readXhsPage,deduplicateImages} from './albums.js';
-import {scanPage} from './scan.js';
+import {collectPageImages} from './page-collector.js';
+import {getSiteAdapter} from './site-adapters.js';
+import {prepareLargeImage} from './image-candidates.js';
+import {readDouyinPage} from './douyin.js';
+import {imageDistance,sourceIdentity} from './case-history.js';
 import {loadDirectory,saveDirectory} from './files.js';
-import {fetchImage,thumbnail} from './images.js';
 import {saveCases} from './case-download.js';
 const $ = id => document.getElementById(id);
-let sourceTab, noteLimit=null, imageMode='interior';
+let sourceTab, noteLimit=null, imageMode='interior',collectionScope='smart',regionSelector=null;
 let directory, worker, active = false, saving = false, stopped = false;
 let items = [], workerId = 0;
 let workerReady;
@@ -79,22 +82,18 @@ async function scan() {
   for (const item of items) URL.revokeObjectURL(item.preview);
   items = []; $('grid').replaceChildren(); $('logs').replaceChildren(); count();
   $('progress').value = 0; if(imageMode==='interior')startWorker();
-  let rejected = 0, failures = 0, frameFailures = 0;
+  let rejected=0,smallImages=0,nonInterior=0,duplicates=0,failures=0,frameFailures=0;
+  const batchFingerprints=[];
   try {
     const tab = await chrome.tabs.get(sourceTab);
+    const adapter=getSiteAdapter(tab.url);
     if (!/^https?:/i.test(tab.url || '')) throw new Error('请在普通 HTTP/HTTPS 网页点击插件，浏览器内部页与商店页面无法采集');
     $('source').textContent = `${tab.title || ''} · ${new URL(tab.url).hostname}`;
-    status('正在扫描图片与网页背景…');
-    let frames;
-    try { frames = await chrome.scripting.executeScript({target:{tabId:sourceTab,allFrames:true},func:scanPage}); }
-    catch (e) {
-      frameFailures++; log(`部分嵌入页面不可访问，仅扫描主页面：${e.message}`);
-      frames = await chrome.scripting.executeScript({target:{tabId:sourceTab},func:scanPage});
-    }
-    let pageImages = frames.flatMap(f => f.result?.images || []);
+    status('正在读取页面图片…');
+    let pageImages=[];
     let albumMessage = '';
     let albumFailed = false;
-    if (/(^|\.)xiaohongshu\.com$/i.test(new URL(tab.url).hostname)) {
+    if (collectionScope==='smart'&&adapter.id==='xiaohongshu') {
       try {
         const [result] = await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readXhsPage});
         const album = result.result;
@@ -127,7 +126,7 @@ async function scan() {
         }
       } catch(e) { pageImages = []; albumMessage = '图集读取失败，请查看采集记录。'; log(albumMessage + ' ' + e.message); }
     }
-    if (/(^|\.)zcool\.com\.cn$/i.test(new URL(tab.url).hostname)) {
+    if (collectionScope==='smart'&&adapter.id==='zcool') {
       pageImages=[];
       try {
         const [page]=await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readZcoolPage});const data=page.result;
@@ -136,21 +135,31 @@ async function scan() {
         log(albumMessage);
       }catch(e){albumFailed=true;albumMessage='作品图集读取失败：'+e.message;log(albumMessage);}
     }
-    if(!/(^|\.)(xiaohongshu\.com|zcool\.com\.cn|cool-de\.com)$/i.test(new URL(tab.url).hostname)){
+    if(collectionScope!=='smart'||!adapter.album){
       pageImages=[];
-      try{const [r]=await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readDesignPage});const data=r.result;
+      if(collectionScope==='smart'&&adapter.id==='generic')try{const [r]=await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readDesignPage});const data=r.result;
         if(data?.detailId){const detail=await readDesignAlbum({id:data.detailId,href:tab.url,windowId:tab.windowId},()=>stopped);pageImages=detail.images||[];}
         else if(data?.notes?.length){const discover=excludeIds=>discoverListNotes({sourceTab,maxNotes:noteLimit,excludeIds,readPage:readDesignPage,initial:data,isStopped:()=>stopped,onProgress:status});const found=await discover([]);const result=await collectZcoolAlbums({sourceTab,notes:found.notes,maxNotes:noteLimit,read:readDesignAlbum,isStopped:()=>stopped,onProgress:status,onLog:log,loadMore:async ids=>(await discover(ids)).notes});pageImages=result.images;}
-        if(!pageImages.length){albumMessage='暂未识别到可读取的案例正文图集，请提供页面链接以适配';log(albumMessage);}
+        if(!pageImages.length)log('未发现完整案例图集，尝试通用大图提取');
       }catch(e){albumMessage='案例图集读取失败：'+e.message;log(albumMessage);}
+      if(!pageImages.length&&!stopped){
+        const result=await collectPageImages({api:chrome,tabId:sourceTab,scope:collectionScope,selector:regionSelector,adapter,isStopped:()=>stopped,onProgress:status});
+        pageImages=result.images;frameFailures+=result.frameFailures;
+        albumMessage=result.scopeFound?adapter.label+' · 正文区域 · 仅保留实际解码后的大图':'未找到明确正文，请打开具体文章、商品或图集详情后重试';
+        log(albumMessage);
+      }
     }
-    if(/(^|\.)cool-de\.com$/i.test(new URL(tab.url).hostname)){
+    if(collectionScope==='smart'&&adapter.id==='cool-de'){
       pageImages=[];
       try{const [r]=await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readCoolPage});const data=r.result;
         if(data?.detailId){const result=await readCoolAlbum({id:data.detailId,href:new URL('/thread-'+data.detailId+'-1-1.html',tab.url).href,windowId:tab.windowId},()=>stopped);pageImages=result.images||[];}
         else if(data){const discover=excludeIds=>discoverListNotes({sourceTab,maxNotes:noteLimit,excludeIds,readPage:readCoolPage,advancePage:advanceCoolPage,initial:data,isStopped:()=>stopped,onProgress:status});const found=await discover([]);log('联盟案例：已发现 '+found.notes.length+' 篇；'+found.reason);const result=await collectZcoolAlbums({sourceTab,notes:found.notes,maxNotes:noteLimit,read:readCoolAlbum,isStopped:()=>stopped,onProgress:status,onLog:log,loadMore:async ids=>(await discover(ids)).notes});pageImages=result.images;albumMessage='联盟案例：成功 '+result.success+' 篇，失败 '+result.failures+' 篇，跳过视频 '+result.skippedVideos+' 篇';}
         if(!pageImages.length)albumMessage=albumMessage||'没有取得案例首帖正文图片，请检查登录或访问提示';log(albumMessage);
       }catch(e){albumFailed=true;albumMessage='联盟案例读取失败：'+e.message;log(albumMessage);}
+    }
+    if(adapter.id==='douyin'){
+      const [result]=await chrome.scripting.executeScript({target:{tabId:sourceTab},world:'MAIN',func:readDouyinPage});
+      pageImages=result.result?.images||[];albumMessage=pageImages.length?'抖音当前正文图集：'+pageImages.length+' 张':'未取得当前抖音正文图集，请打开具体图文作品后重试';log(albumMessage);
     }
     const candidates = deduplicateImages(pageImages);
     $('progress').max = Math.max(1,candidates.length);
@@ -159,13 +168,7 @@ async function scan() {
     function prefetch(index) {
       if(index>=candidates.length)return;
       prepared.set(index,(async()=>{
-        let bitmap;
-        try {
-          ({bitmap}=await fetchImage(candidates[index].url));
-          const width=bitmap.width,height=bitmap.height;
-          if(!((Math.min(width,height)>=600)||(Math.min(width,height)>=400&&Math.max(width,height)>=1000))||Math.max(width,height)/Math.min(width,height)>4)return {excluded:true};
-          return {width,height,thumb:await thumbnail(bitmap)};
-        }catch(e){return {error:e.message};}finally{bitmap?.close();}
+        return prepareLargeImage(candidates[index],{isStopped:()=>stopped});
       })());
     }
     for(let index=0;index<Math.min(3,candidates.length);index++)prefetch(index);
@@ -175,21 +178,32 @@ async function scan() {
       const image=await prepared.get(i);prepared.delete(i);if(!stopped)prefetch(i+3);
       $('progress').value=i+1;
       if(image.error){failures++;log('图片读取失败：'+item.url+' · '+image.error);continue;}
-      if(image.excluded){rejected++;continue;}
-      const {thumb}=image;item.width=image.width;item.height=image.height;
+      if(image.excluded){rejected++;smallImages++;log('尺寸不足：'+(item.label||item.url)+' · 实际最大 '+image.width+' × '+image.height);continue;}
+      const group=sourceIdentity(item)||item.page;
+      const duplicate=batchFingerprints.find(entry=>entry.group===group&&imageDistance(entry.fp,image.fp)<=2);
+      if(duplicate){
+        duplicates++;const previous=items[duplicate.index];
+        if(image.width*image.height>previous.width*previous.height){
+          URL.revokeObjectURL(previous.preview);Object.assign(previous,{url:image.url,width:image.width,height:image.height,preview:URL.createObjectURL(image.thumb)});duplicate.fp=image.fp;
+          const card=$('grid').children[duplicate.index];card.querySelector('img').src=previous.preview;card.querySelector('small').textContent=previous.width+' × '+previous.height+(previous.confidence==null?' · 不限题材':' · 室内匹配 '+Math.round(previous.confidence*100)+'%');
+        }
+        log('同次采集重复，保留较大版本：'+(item.label||item.url));continue;
+      }
+      const {thumb}=image;item.url=image.url;item.width=image.width;item.height=image.height;
       if (stopped) break;
       // A model error stops the scan; never substitute URL keywords for visual classification.
       const result = imageMode==='all'?{keep:true,confidence:null}:await classify(thumb);
       if (stopped) break;
-      if (!result.keep) { rejected++; continue; }
+      if (!result.keep) { rejected++;nonInterior++;log('分类排除：'+(item.label||item.url)+' · '+image.width+' × '+image.height+' · 室内匹配 '+Math.round(result.confidence*100)+'% · '+(result.label||''));continue; }
+      batchFingerprints.push({fp:image.fp,group,index:items.length});
       Object.assign(item,{confidence:result.confidence,preview:URL.createObjectURL(thumb)});
       items.push(item); addCard(item);
     }
-    status(`${stopped ? '已停止' : imageMode==='all'?'提取完成':'识别完成'} · 保留 ${items.length} 张 · 排除 ${rejected} 张 · 读取失败 ${failures} 张${frameFailures ? ' · 部分框架未扫描' : ''}`);
+    status(`${stopped ? '已停止' : imageMode==='all'?'提取完成':'识别完成'} · 保留 ${items.length} 张 · 尺寸不足 ${smallImages} 张 · 非室内 ${nonInterior} 张 · 重复 ${duplicates} 张 · 读取失败 ${failures} 张${frameFailures ? ' · 部分框架未扫描' : ''}`);
     if(albumFailed) status('图集读取失败 · 尚未进入图片识别');
     $('notice').textContent = albumMessage || (imageMode==='all'?'不限图片题材，保留去重和尺寸过滤。':'默认仅显示本地模型认定的室内图片。匹配分数是类别间的相对分数，可能存在误判或漏选。未加载图片请滚动原网页后重新扫描。');
   } catch(e) {
-    if (!stopped) { status(`采集未完成：${e.message}`); log(e.message); $('notice').textContent = '请确认 models 与 vendor 文件夹完整，然后重新加载插件。已完成识别的图片仍可下载。'; }
+    if (!stopped) { status(`采集未完成：${e.message}`); log(e.message); $('notice').textContent = /模型|识别组件|worker/i.test(e.message)?'请确认 models 与 vendor 文件夹完整，然后重新加载插件。已完成识别的图片仍可下载。':'请检查网页加载与登录状态，或重新选择采集区域。已完成识别的图片仍可下载。'; }
   } finally { active = false; controls(); }
 }
 async function browserDownload(blob, filename) {
@@ -262,7 +276,7 @@ async function initialize() {
 
 let hasStarted=false,broadcastTimer;
 function snapshot() {
-  return {sourceTab,imageMode,hasStarted,active,saving,downloadComplete,items,casePrompt,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
+  return {sourceTab,imageMode,collectionScope,hasStarted,active,saving,downloadComplete,items,casePrompt,status:$('status').textContent,source:$('source').textContent,notice:$('notice').textContent,progress:$('progress').value,max:$('progress').max,logs:[...$('logs').children].slice(-500).map(li=>li.textContent),detailsOpen:$('logs').closest('details').open};
 }
 function publish() {
   if(broadcastTimer)return;
@@ -275,6 +289,9 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   (async()=>{
     await engineInitialized;
     const payload=message.payload||{};
+    if(message.command==='scan'&&!active&&!saving){
+      collectionScope='smart';regionSelector=null;
+    }
     if(message.command==='case-decision'){
       if(!casePrompt||payload.token!==casePrompt.token)throw new Error('提示已过期，请重新查看');
       if(!['skip','separate','merge'].includes(payload.action))throw new Error('未知的案例操作');

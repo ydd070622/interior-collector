@@ -1,0 +1,12 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';
+const {readDouyinPage}=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync(new URL('../douyin.js',import.meta.url),'utf8')).toString('base64'));
+const id='7687800048747111016';globalThis.location={pathname:'/note/'+id,href:'https://www.douyin.com/note/'+id};
+const detail={awemeId:id,desc:'图集',images:Array.from({length:5},(_,i)=>({width:1440,height:1800,urlList:['https://p3.douyinpic.com/picture-'+i+'~original.webp','https://p9.douyinpic.com/picture-'+i+'~original.webp'],downloadUrlList:['https://p3.douyinpic.com/watermark-'+i+'.webp']}))};
+const related={awemeId:'other',images:[{urlList:['https://p3.douyinpic.com/recommend.webp']}]};
+const chunk='self.__pace_f.push('+JSON.stringify([1,'7:'+JSON.stringify(['$','$L9',null,{awemeId:id,aweme:{detail},related}])])+')';
+globalThis.document={title:'图集 - 抖音',getElementById:()=>null,scripts:[{textContent:chunk}],querySelector:()=>null};
+const injected=new Function('return ('+readDouyinPage.toString()+')')();let result=injected();
+assert.equal(result.images.length,5);assert.equal(new Set(result.images.map(i=>i.imageIndex)).size,5);assert.ok(result.images.every(i=>i.urls.length===2&&!i.urls.some(u=>u.includes('watermark'))));
+document.scripts=[];document.getElementById=()=>({textContent:encodeURIComponent(JSON.stringify({current:detail,recommend:related}))});result=injected();assert.equal(result.images.length,5);
+location.pathname='/';location.href='https://www.douyin.com/';assert.equal(injected().images.length,0,'home page must not collect recommendations');
+console.log('PASS: current Douyin photo post has exactly five slots, multiple image versions stay grouped, excludes recommendations and alternate watermarked covers, parses encoded and streamed page data');

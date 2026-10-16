@@ -23,9 +23,10 @@ async function configureSource(tab) {
     if(!/(^|\.)(xiaohongshu\.com|zcool\.com\.cn)$/i.test(url.hostname))listMode=!/^\/(?:work|works|project|projects|case|cases|article|articles|detail|design)\/[^/]+/.test(url.pathname);
     if(/(^|\.)cool-de\.com$/i.test(url.hostname))listMode=!( /\/thread-\d+-\d+-\d+\.html/.test(url.pathname)||(url.pathname.endsWith('/forum.php')&&url.searchParams.get('mod')==='viewthread'&&url.searchParams.has('tid')));
   $('source').textContent=tab.title||tab.url;
+  if(/(^|\.)douyin\.com$/i.test(url.hostname))listMode=!/^\/(?:note|video)\/\d+/.test(url.pathname)&&!url.searchParams.has('modal_id');
   $('rescan').textContent=listMode?'开始提取':'重新扫描';
 }
-function scanPayload(){const raw=$('noteLimit').value.trim();const noteLimit=raw===''?null:Number(raw);if(noteLimit!==null&&(!Number.isSafeInteger(noteLimit)||noteLimit<1))throw new Error('采集篇数请输入正整数，或留空不限');return {sourceTab,noteLimit,imageMode:document.querySelector('input[name=imageMode]:checked').value};}
+function scanPayload(){const raw=$('noteLimit').value.trim(),noteLimit=raw===''?null:Number(raw);if(noteLimit!==null&&(!Number.isSafeInteger(noteLimit)||noteLimit<1))throw new Error('采集篇数请输入正整数，或留空不限');return {sourceTab,noteLimit,collectionScope:'smart',imageMode:document.querySelector('input[name=imageMode]:checked').value};}
 async function startScan(){try{const result=await chrome.runtime.sendMessage({type:'CURRENT_SOURCE'});if(result?.error)throw new Error(result.error);if(!result?.tab)throw new Error('没有找到当前网页');sourceTab=result.tab.id;await configureSource(result.tab);const payload=scanPayload();await chrome.storage.local.set({noteLimit:payload.noteLimit});await job('scan',payload);}catch(e){$('status').textContent=e.message;}}
 async function job(command,payload={}) {
   const result=await chrome.runtime.sendMessage({type:'JOB',command,payload});
@@ -45,7 +46,7 @@ function render(next) {
     }
     return job('case-decision',payload);
   });
-  state=next;$('source').textContent=next.source;$('status').textContent=next.status;$('notice').textContent=next.notice||'收起弹窗后任务仍会继续，再次打开可查看进度。';
+  state=next;if(next.source)$('source').textContent=next.source;$('status').textContent=next.status;$('notice').textContent=next.notice||'收起弹窗后任务仍会继续，再次打开可查看进度。';
   const selectedCount=next.items.filter(item=>!item.excluded).length;
   $('grid').hidden=!!next.casePrompt;
   $('download').hidden=!!next.casePrompt;
@@ -99,6 +100,7 @@ async function download(index) {
 }
 chrome.runtime.onMessage.addListener(message=>{if(message.type==='JOB_UPDATE')render(message.state);});
 $('rescan').onclick=startScan;
+document.querySelectorAll('input[name=imageMode]').forEach(input=>input.addEventListener('change',()=>chrome.storage.local.set({imageMode:input.value})));
 $('noteLimit').onchange=()=>{try{const {noteLimit}=scanPayload();chrome.storage.local.set({noteLimit});}catch(e){$('status').textContent=e.message;}};
 $('stop').onclick=()=>job('stop').catch(e=>$('status').textContent=e.message);
 $('download').onclick=()=>download();
@@ -119,7 +121,9 @@ for(const field of ['format'])$(field).onchange=()=>chrome.storage.local.set({[f
     }
     await configureSource(tab);
     configureScanRow();
-    const settings=await chrome.storage.local.get(['format','noteLimit']);if(settings.format)$('format').value=settings.format;
+    const settings=await chrome.storage.local.get(['format','noteLimit','imageMode']);if(settings.format)$('format').value=settings.format;
+    if(['all','interior'].includes(settings.imageMode))document.querySelector('input[name=imageMode][value="'+settings.imageMode+'"]').checked=true;
+    configureScanRow();await configureSource(tab);
     if(Number.isSafeInteger(settings.noteLimit)&&settings.noteLimit>0)$('noteLimit').value=settings.noteLimit;
     const directory=await loadDirectory();showFolder(directory);
     const current=await job('state');

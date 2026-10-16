@@ -103,3 +103,4 @@ body.reviewing-case main:has(#collectionSettings[open])>.case-prompt{flex:1 0 36
 .case-actions button{font-size:12px;padding:9px;background:transparent}
 .case-actions button:first-child{grid-column:1/-1;padding:11px;background:#8c623e}
 .case-footer p[role=alert]{font-size:12px;max-height:54px;overflow-y:auto;color:#a04331}
+.limit-row{flex-wrap:wrap}

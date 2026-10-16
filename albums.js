@@ -65,17 +65,19 @@ export function readXhsPage() {
       if (value.type !== 'video') for (let index=0;index<list.length;index++) {
         const image=list[index];
         const info=image.infoList || image.info_list || [];
-        const preferred=info.find(x => /WB_DFT|original/i.test(x.imageScene || x.image_scene || ''));
-        const raw=image.urlDefault || image.url_default || preferred?.url || image.url || image.urlPre || info.find(x=>x.url)?.url;
+        const preferred=info.filter(x => /original|WB_DFT/i.test(x.imageScene || x.image_scene || '')).map(x=>x.url);
+        const urls=[...new Set([...preferred,image.urlDefault,image.url_default,image.url,...info.map(x=>x.url),image.urlPre].filter(x=>typeof x==='string'&&x).map(raw=>{try{const u=new URL(raw,location.href);if(u.protocol==='http:'&&/(^|\.)xhscdn\.com$/i.test(u.hostname))u.protocol='https:';return /^https?:$/.test(u.protocol)?u.href:null;}catch{return null;}}).filter(Boolean))];
+        const raw=urls[0];
         if (typeof raw!=='string') continue;
         try {
           const url=new URL(raw.startsWith('//')?`https:${raw}`:raw,location.href);
           if (!/^https?:$/.test(url.protocol)) continue;
-          images.push({url:url.href,label:`${titleFor(value,id)} · ${index+1}/${list.length}`,width:0,height:0,page:location.href,noteId:id,noteTitle:titleFor(value,id),imageIndex:index,album:true});
+          images.push({url:url.href,urls,label:`${titleFor(value,id)} · ${index+1}/${list.length}`,width:0,height:0,page:location.href,noteId:id,noteTitle:titleFor(value,id),imageIndex:index,album:true});
         } catch {}
       }
       const previous=albums.get(id);
       if(images.length&&(!previous||images.length>previous.length))albums.set(id,images);
+      else if(previous&&images.length===previous.length)for(let i=0;i<images.length;i++)previous[i].urls=[...new Set([...(previous[i].urls||[previous[i].url]),...images[i].urls])];
     }
     for (const [key,child] of Object.entries(value)) {
       if (/^(userInfo|author|comments|comment|recommend|recommendations)$/i.test(key)) continue;
@@ -119,14 +121,16 @@ export function extractNoteAlbum(state,id,page,fallbackTitle='') {
       const title=[value.title,value.displayTitle,value.display_title,fallbackTitle].find(t=>typeof t==='string'&&t.trim())?.trim()||'未命名笔记';
       for(let index=0;index<list.length;index++) {
         const image=list[index], info=image.infoList||image.info_list||[];
-        const preferred=info.find(x=>/WB_DFT|original/i.test(x.imageScene||x.image_scene||''));
-        const raw=image.urlDefault||image.url_default||preferred?.url||image.url||image.urlPre||info.find(x=>x.url)?.url;
+        const preferred=info.filter(x=>/original|WB_DFT/i.test(x.imageScene||x.image_scene||'')).map(x=>x.url);
+        const urls=[...new Set([...preferred,image.urlDefault,image.url_default,image.url,...info.map(x=>x.url),image.urlPre].filter(x=>typeof x==='string'&&x).map(raw=>{try{const u=new URL(raw,page);if(u.protocol==='http:'&&/(^|\.)xhscdn\.com$/i.test(u.hostname))u.protocol='https:';return /^https?:$/.test(u.protocol)?u.href:null;}catch{return null;}}).filter(Boolean))];
+        const raw=urls[0];
         if(typeof raw!=='string')continue;
         try { const url=new URL(raw.startsWith('//')?`https:${raw}`:raw,page);if(!/^https?:$/.test(url.protocol))continue;
-          albumImages.push({url:url.href,label:`${title} · ${index+1}/${list.length}`,width:0,height:0,page,noteId:id,noteTitle:title,imageIndex:index,album:true});
+          albumImages.push({url:url.href,urls,label:`${title} · ${index+1}/${list.length}`,width:0,height:0,page,noteId:id,noteTitle:title,imageIndex:index,album:true});
         }catch{}
       }
       if(albumImages.length>images.length)images=albumImages;
+      else if(albumImages.length===images.length)for(let i=0;i<images.length;i++)images[i].urls=[...new Set([...(images[i].urls||[images[i].url]),...albumImages[i].urls])];
     }
     for(const child of Object.values(value))walk(child,depth+1);
   }
@@ -149,7 +153,8 @@ export function deduplicateImages(images) {
   for(const image of images) {
     const key=image.album&&image.noteId&&Number.isInteger(image.imageIndex)
       ?image.noteId+'|slot:'+image.imageIndex:(image.noteId||'')+'|url:'+image.url;
-    if(!unique.has(key))unique.set(key,image);
+    if(!unique.has(key))unique.set(key,{...image,urls:[...new Set([image.url,...(image.urls||[])])]});
+    else {const previous=unique.get(key);previous.urls=[...new Set([...(previous.urls||[previous.url]),image.url,...(image.urls||[])])];}
   }
   return [...unique.values()];
 }

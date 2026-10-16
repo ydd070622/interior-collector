@@ -23,7 +23,7 @@ function makeRoot(name,spec){
  for(const [relative,names]of Object.entries(spec)){let folder=base;for(const part of relative.split('/').filter(Boolean)){if(!folder.children.has(part))folder.children.set(part,directory(part));folder=folder.children.get(part);}names.forEach((filename,i)=>{const raw=assets[i%assets.length];const bytes=Uint8Array.from(atob(raw.split(',')[1]),c=>c.charCodeAt(0));const file=new File([bytes],filename,{type:raw.startsWith('data:image/png')?'image/png':'image/jpeg',lastModified:100});folder.children.set(filename,{kind:'file',name:filename,getFile:async()=>file});});}
  return base;
 }
-const style=makeRoot('意式极简',{'参考/01-客厅':['001.jpg','002.jpg'],'02-卧室':['001.jpg']});
+const style=makeRoot('意式极简',{'参考/01-客厅':['002.jpg','001.jpg'],'02-卧室':['001.jpg']});
 const incoming=makeRoot('项目 B',{'01-新案例':['001.jpg','002.jpg']});
 const moved=makeRoot('意式极简-新位置',{'参考/01-客厅':['001.jpg','002.jpg'],'02-卧室':['001.jpg']});
 async function record(root,folder,id,title){let directory=root;for(const name of folder.split('/'))directory=await directory.getDirectoryHandle(name);const images=[];let i=0;for await(const [name,handle]of directory.entries()){const file=await handle.getFile();images.push({name,size:file.size,modified:100,fp:{preview:assets[i++%assets.length]}});}return {id,title,folder,images,sources:[],sourceUrls:['https://example.com/design'],downloadedAt:'2026-10-15T00:00:00Z'};}
@@ -52,9 +52,11 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   const page=await browser.newPage({viewport:{width:1240,height:920}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/library.html');
   await page.getByText('3 个案例 · 4 张图片',{exact:true}).waitFor();assert.equal(await page.locator('.tile').count(),3);
+  assert.deepEqual(await page.locator('.tile-title').allTextContents(),['02-卧室','01-默认下载','01-客厅'],'cards retain real folder numbers, including nested folders');
+  assert.ok((await page.locator('#folders .case-folder .label').allTextContents()).includes('01-客厅'),'sidebar retains the folder number');
   assert.equal(await page.locator('.tile .path').count(),0,'card paths are only available on hover');
   assert.equal(await page.locator('.tile-cover').first().evaluate(el=>getComputedStyle(el).aspectRatio),'3 / 4');
-  assert.ok(await page.locator('.tile').filter({hasText:'默认下载案例'}).innerText().then(text=>text.includes('日期未知')));
+  assert.equal(await page.locator('.tile-info small').count(),0,'case cards omit dates without leaving a metadata row');
   assert.equal(await page.locator('.sidebar-note').count(),0);
   assert.ok(await page.locator('aside').evaluate(el=>Math.abs(el.getBoundingClientRect().bottom-innerHeight)<2),'directory panel fills the available window height');
   const separator=page.getByRole('separator',{name:'调整左侧栏宽度'});
@@ -89,6 +91,7 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   await page.locator('[data-action="folder"][data-key="case-directory:style"]').click();
   assert.equal(await rootTree.evaluate(el=>el.open),true,'directory can reopen');
   await page.getByRole('button',{name:'打开案例：客厅案例',exact:true}).click();assert.equal(await page.locator('.image-tile').count(),2);
+  assert.deepEqual(await page.locator('.image-tile .tile-title').allTextContents(),['001.jpg','002.jpg'],'case gallery sorts filenames even when the index is unordered');
   await page.getByRole('button',{name:'预览图片：001.jpg',exact:true}).click();await page.waitForFunction(()=>document.getElementById('original').src.startsWith('blob:'));
   await page.waitForFunction(()=>document.getElementById('original').complete&&document.getElementById('original').naturalWidth>0);
   assert.ok(await page.locator('#viewer').evaluate(el=>el.getBoundingClientRect().width-document.getElementById('original').getBoundingClientRect().width<32),'lightbox retains a modest image frame instead of wide side panels');
@@ -103,6 +106,8 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   await page.getByRole('button',{name:'关闭预览'}).click();
   await page.locator('#all').click();await page.getByRole('searchbox').fill('卧室');assert.equal(await page.locator('.tile').count(),1);
   await page.getByRole('searchbox').fill('');await page.getByRole('button',{name:'图片',exact:true}).click();assert.equal(await page.locator('.image-tile').count(),4);
+  assert.deepEqual(await page.locator('.image-origin').allTextContents(),['02-卧室','01-默认下载','01-客厅','01-客厅'],'mixed image view identifies each source case with its actual folder number');
+  assert.ok((await page.locator('.image-origin').last().getAttribute('title')).includes('参考/01-客厅'),'hover exposes the full source location');
   await page.getByRole('button',{name:'案例',exact:true}).click();
   await page.locator('#import').click();await page.getByText('4 个案例 · 6 张图片',{exact:true}).waitFor();assert.equal(await page.locator('.tile').count(),4);
   // Thumbnails never request permission; a deliberate preview can request it.

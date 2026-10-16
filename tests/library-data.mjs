@@ -17,13 +17,23 @@ globalThis.__libraryTest={cached:[record],save:async(d,r)=>saved={directory:d,re
 const fileModule=encode('export const loadDirectoryCaseHistory=async()=>globalThis.__libraryTest.cached;export const saveDirectoryCaseHistory=(...args)=>globalThis.__libraryTest.save(...args);export const withCaseHistoryLock=fn=>fn();export const replaceCaseLibraryDirectory=(...args)=>globalThis.__libraryTest.replace(...args);');
 const historyModule=encode(fs.readFileSync(new URL('../case-history.js',import.meta.url),'utf8'));
 const dataSource=fs.readFileSync(new URL('../library-data.js',import.meta.url),'utf8').replace("'./files.js'",JSON.stringify(fileModule)).replace("'./case-history.js'",JSON.stringify(historyModule));
-const {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel}=await import(encode(dataSource));
+const {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel,caseDisplayTitle,folderNumber}=await import(encode(dataSource));
+assert.equal(caseDisplayTitle(record),'01-客厅');
+assert.equal(caseDisplayTitle({folder:'01 复古包豪斯',title:'复古包豪斯'}),'01 复古包豪斯');
+assert.equal(caseDisplayTitle({title:'无文件夹案例'}),'无文件夹案例');
+assert.equal(folderNumber({folder:'99-父目录/02-卧室'}),2);
+assert.deepEqual(selectLibraryCases([{record:{folder:'父目录/09-九'}},{record:{folder:'父目录/30-三十'}}]).map(e=>folderNumber(e.record)),[30,9]);
 assert.equal(caseDateLabel({}),'日期未知');
 assert.equal(caseDateLabel({downloadedAt:'invalid'}),'日期未知');
 assert.match(caseDateLabel({importedAt:'2026-10-15T00:00:00Z'}),/^导入于 /);
 assert.ok(!caseDateLabel({downloadedAt:'2026-10-14T00:00:00Z',importedAt:'2026-10-15T00:00:00Z'}).startsWith('导入于 '));
 const libraries=[{key:'a',name:'风格素材',directory,records:[record]},{key:'b',name:'项目',directory:null,records:[{...record,id:'one',folder:'01-卧室',title:'卧室',updatedAt:'2026-10-15'}]}];
 const entries=flattenLibraries(libraries);assert.equal(entries.length,2);assert.notEqual(entries[0].key,entries[1].key);
+const unsorted={id:'unordered',images:['010.png','003.png','001.png','002.png','009.png'].map(name=>({name,downloadId:Number(name.split('.')[0])}))};
+const sorted=flattenLibraries([{key:'test',records:[unsorted]}])[0].record.images;
+assert.deepEqual(sorted.map(image=>image.name),['001.png','002.png','003.png','009.png','010.png']);
+assert.deepEqual(sorted.map(image=>image.downloadId),[1,2,3,9,10],'sorting preserves image metadata');
+assert.equal(unsorted.images[0].name,'010.png','display sorting does not mutate stored history');
 assert.equal(selectLibraryCases(entries,{query:'原木风'})[0].record.title,'客厅');assert.equal(selectLibraryCases(entries,{query:'001.png'}).length,2);
 assert.equal(selectLibraryCases(entries,{folder:'b'})[0].record.title,'卧室');
 // Materials default to the download order: the highest folder number first.

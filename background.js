@@ -4,7 +4,8 @@ import {readCoolPage,scrollCoolDetail,advanceCoolPage} from './cool-de.js';
 import {readDesignPage,scrollDesignDetail} from './design-sites.js';
 import {advanceListPage} from './discover-notes.js';
 import {readZcoolPage,scrollZcoolDetail} from './zcool.js';
-import {scanPage} from './scan.js';
+import {scanPage,scrollImagePage} from './scan.js';
+import {readDouyinPage} from './douyin.js';
 import {readXhsPage} from './albums.js';
 import {moveNoteList} from './discover-notes.js';
 import {fetchXhsNoteHtml} from './list-albums.js';
@@ -66,7 +67,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
     })().then(respond,e=>respond({error:e.message}));return true;
   }
   if(message.type==='ENGINE_API') {
-    const functions={scanPage,readXhsPage,moveNoteList,fetchXhsNoteHtml,readZcoolPage,scrollZcoolDetail,readDesignPage,scrollDesignDetail,advanceListPage,readCoolPage,scrollCoolDetail,advanceCoolPage};
+    const functions={scanPage,scrollImagePage,readDouyinPage,readXhsPage,moveNoteList,fetchXhsNoteHtml,readZcoolPage,scrollZcoolDetail,readDesignPage,scrollDesignDetail,advanceListPage,readCoolPage,scrollCoolDetail,advanceCoolPage};
     (async()=>{
       const args=message.args||[];
       switch(message.operation){

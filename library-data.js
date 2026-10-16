@@ -3,7 +3,8 @@ import {readFolderHistory,removeLegacyFolderHistory,resolveCaseDirectory} from '
 
 export function flattenLibraries(libraries) {
   return libraries.flatMap(library=>(library.records||[]).filter(record=>record.images?.length).map(record=>({
-    key:encodeURIComponent(library.key)+'|'+encodeURIComponent(record.id),library,record,
+    key:encodeURIComponent(library.key)+'|'+encodeURIComponent(record.id),library,
+    record:{...record,images:[...record.images].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'zh-CN',{numeric:true}))},
     location:[library.name,record.folder].filter(Boolean).join('／')
   })));
 }
@@ -15,8 +16,11 @@ export function caseDateLabel(record) {
   return '日期未知';
 }
 // The leading number of the folder name is the download order, so it is the natural material order.
+export function caseDisplayTitle(record) {
+  return String(record?.folder||'').split('/').filter(Boolean).at(-1)||record?.title||'';
+}
 export function folderNumber(record) {
-  const match=String(record?.folder||'').match(/^(\d+)/);
+  const match=caseDisplayTitle(record).match(/^(\d+)/);
   return match?Number(match[1]):-1;
 }
 function newestFirst(a,b) {

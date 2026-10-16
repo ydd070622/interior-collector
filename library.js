@@ -1,5 +1,5 @@
 import {loadCaseLibraries,removeCaseLibrary} from './files.js';
-import {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel} from './library-data.js';
+import {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel,caseDisplayTitle} from './library-data.js';
 
 const $=id=>document.getElementById(id);
 // ?view=compact marks the narrow window opened beside the collection window.
@@ -85,7 +85,7 @@ function notice(text){$('notice').textContent=text||'';$('notice').hidden=!text;
 function selectedEntry(){return byKey.get(state.caseKey);}
 function selectedLibrary(){return selectedEntry()?.library||libraries.find(l=>l.key===state.folder);}
 function currentCases(){return selectLibraryCases(entries,state);}
-function caseAction(entry){return '<button class="folder-button case-folder" data-action="case" data-key="'+escape(entry.key)+'" aria-current="'+(state.caseKey===entry.key?'page':'false')+'"><span class="label" title="'+escape(entry.location)+'">'+escape(entry.record.title)+'</span><small>'+entry.record.images.length+'</small></button>';}
+function caseAction(entry){return '<button class="folder-button case-folder" data-action="case" data-key="'+escape(entry.key)+'" aria-current="'+(state.caseKey===entry.key?'page':'false')+'"><span class="label" title="'+escape(entry.location)+'">'+escape(caseDisplayTitle(entry.record))+'</span><small>'+entry.record.images.length+'</small></button>';}
 function folderTree(rows,depth=0,prefix=''){
   const leaves=[],groups=new Map();
   for(const {entry,parts}of rows){if(!parts.length)leaves.push(entry);else{if(!groups.has(parts[0]))groups.set(parts[0],[]);groups.get(parts[0]).push({entry,parts:parts.slice(1)});}}
@@ -111,7 +111,8 @@ function imageMarkup(entry,index){
 }
 function tile(entry,index){
   const isCase=index===undefined,imageIndex=isCase?0:index,image=entry.record.images[imageIndex];
-  return '<button class="tile '+(isCase?'':'image-tile')+'" data-action="'+(isCase?'case':'preview')+'" data-key="'+escape(entry.key)+'" data-index="'+imageIndex+'" aria-label="'+escape((isCase?'打开案例：':'预览图片：')+(isCase?entry.record.title:image.name))+'"><div class="tile-cover">'+imageMarkup(entry,imageIndex)+(isCase?'<span class="tile-count">'+entry.record.images.length+' 张</span>':'')+'</div><div class="tile-info" title="'+escape(entry.location)+'"><span class="tile-title" title="'+escape(isCase?entry.record.title:image.name)+'">'+escape(isCase?entry.record.title:image.name)+'</span>'+(isCase?'<small>'+escape(dateLabel(entry.record))+'</small>':'')+'</div></button>';
+  const origin=!isCase&&!state.caseKey?'<small class="image-origin" title="'+escape(entry.location)+'">'+escape(caseDisplayTitle(entry.record))+'</small>':'';
+  return '<button class="tile '+(isCase?'':'image-tile')+'" data-action="'+(isCase?'case':'preview')+'" data-key="'+escape(entry.key)+'" data-index="'+imageIndex+'" aria-label="'+escape((isCase?'打开案例：':'预览图片：')+(isCase?entry.record.title:image.name))+'"><div class="tile-cover">'+imageMarkup(entry,imageIndex)+(isCase?'<span class="tile-count">'+entry.record.images.length+' 张</span>':'')+'</div><div class="tile-info" title="'+escape(entry.location)+'"><span class="tile-title" title="'+escape(isCase?caseDisplayTitle(entry.record):image.name)+'">'+escape(isCase?caseDisplayTitle(entry.record):image.name)+'</span>'+origin+'</div></button>';
 }
 function renderGallery(){
   imageObserver.disconnect();thumbnailQueue.length=0;const entry=selectedEntry(),cases=entry?[entry]:currentCases(),imageMode=!!entry||state.mode==='images';
@@ -125,10 +126,10 @@ function renderGallery(){
 }
 function render(){
   const entry=selectedEntry(),library=selectedLibrary(),cases=entry?[entry]:currentCases();
-  $('heading').textContent=entry?entry.record.title:library?library.name:'全部素材';
+  $('heading').textContent=entry?caseDisplayTitle(entry.record):library?library.name:'全部素材';
   $('summary').textContent=entry?entry.record.images.length+' 张图片 · '+dateLabel(entry.record):cases.length+' 个案例 · '+cases.reduce((sum,e)=>sum+e.record.images.length,0)+' 张图片';
   $('breadcrumbs').replaceChildren();
-  if(entry){const button=document.createElement('button');button.textContent='‹ 返回素材库';button.onclick=()=>changeFolder(entry.library.key);$('breadcrumbs').append(button);
+  if(entry){const button=document.createElement('button');button.className='back-library';button.type='button';button.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18"/></svg><span>返回素材库</span>';button.onclick=()=>changeFolder(entry.library.key);$('breadcrumbs').append(button);
     for(const raw of entry.record.sourceUrls||[]){try{const url=new URL(raw);if(!/^https?:$/.test(url.protocol))continue;const link=document.createElement('a');link.className='source-link';link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='查看原文';$('breadcrumbs').append(link);}catch{}}
   }
   $('toolbar').hidden=!!entry;$('caseView').setAttribute('aria-pressed',String(state.mode==='cases'));$('imageView').setAttribute('aria-pressed',String(state.mode==='images'));
@@ -161,15 +162,27 @@ async function drainThumbnails(){
   let bitmap;
   try{
     const file=await readLibraryImage(entry,image);bitmap=await createImageBitmap(file);
-    const factor=Math.min(1,480/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*factor));canvas.height=Math.max(1,Math.round(bitmap.height*factor));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);
-    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.8));if(!blob)return;
+    // Match the card's physical pixels; the 160px history preview is only a placeholder.
+    const cover=img.closest('.tile-cover').getBoundingClientRect();
+    const pixels=Math.min(3,window.devicePixelRatio||1);
+    const target=Math.max(960,Math.ceil(Math.max(cover.width,cover.height)*pixels));
+    const factor=Math.min(1,target/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*factor));canvas.height=Math.max(1,Math.round(bitmap.height*factor));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.92));if(!blob)return;
     const url=URL.createObjectURL(blob);thumbnails.set(cacheKey,url);
     for(const current of $('gallery').querySelectorAll('img[data-entry]')){
       const descriptor=byKey.get(current.dataset.entry)?.record.images[Number(current.dataset.index)];
       if(current.dataset.entry===entry.key&&descriptor?.name===image.name&&descriptor?.modified===image.modified&&descriptor?.size===image.size)current.src=url;
     }
     if(thumbnails.size>240){const oldest=thumbnails.keys().next().value;URL.revokeObjectURL(thumbnails.get(oldest));thumbnails.delete(oldest);}
-  }catch(error){if(img.isConnected)img.title=error.name==='NotAllowedError'?'点击预览并授权读取原图':'原图可能已移动或删除；当前显示历史缩略图';}
+  }catch(error){if(img.isConnected){
+    img.title=error.name==='NotAllowedError'?'请授权读取清晰图片':'原图可能已移动或删除；当前显示历史缩略图';
+    if(error.name==='NotAllowedError'&&!$('notice').querySelector('button')){
+      notice('当前显示低清历史缩略图，读取原文件夹后可显示清晰图片。 ');
+      const button=document.createElement('button');button.textContent='读取清晰图片';
+      button.onclick=()=>authorizeFolder(entry.library).catch(error=>notice(error.message));
+      $('notice').append(button);
+    }
+  }}
   finally{bitmap?.close();pendingThumbs.delete(cacheKey);thumbnailActive--;drainThumbnails();}
   if(thumbnailActive<3)drainThumbnails();
 }
@@ -205,7 +218,7 @@ function fitViewer(){
 async function loadOriginal(request=false){
   const entry=viewerEntry,image=entry?.record.images[viewerIndex];if(!image)return;
   const token=++viewerToken;cleanOriginal();const preview=safePreview(image);if(preview)$('original').src=preview;else $('original').removeAttribute('src');$('original').alt=image.name;
-  $('viewerTitle').textContent=entry.record.title+' · '+(viewerIndex+1)+'/'+entry.record.images.length;
+  $('viewerTitle').textContent=caseDisplayTitle(entry.record)+' · '+(viewerIndex+1)+'/'+entry.record.images.length;
   $('viewerTitle').title=$('viewerTitle').textContent;
   $('imageName').textContent=image.name;$('imageLocation').textContent=entry.location;
   $('viewerStatus').textContent='正在读取本地原图…';$('authorize').hidden=!entry.library.directory;$('showDownload').hidden=!image.downloadId;
