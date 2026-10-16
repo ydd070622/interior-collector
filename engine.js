@@ -228,7 +228,7 @@ async function download(selected) {
     if (await permission !== 'granted') throw new Error('未获得文件夹写入授权，请重新选择保存文件夹');
     const result=await saveCases({selected,destination,downloads:chrome.downloads,format,quality,browserDownload,decide:decideCase,status,log});
     downloadComplete=result.failures===0&&result.success>0&&selected.length===items.filter(item=>!item.excluded).length;
-    status(`保存完成 · 成功 ${result.success} 张 · 跳过 ${result.skipped} 张 · 失败 ${result.failures} 张`);
+    status(`保存完成 · 新增 ${result.success-result.upgraded} 张 · 高清升级 ${result.upgraded} 张 · 跳过 ${result.skipped} 张 · 失败 ${result.failures} 张`);
   } catch(e) { status(e.message); log(e.message); }
   finally { saving = false; controls(); publish(); }
 }

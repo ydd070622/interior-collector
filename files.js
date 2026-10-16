@@ -69,12 +69,34 @@ function notifyCaseHistoryChanged(){try{const channel=new BroadcastChannel('inte
 export function withCaseHistoryLock(operation) {
   return globalThis.navigator?.locks?.request?globalThis.navigator.locks.request('interior-case-history-write',operation):operation();
 }
+export async function removeCaseLibrary(key) {
+  return withCaseHistoryLock(async()=>{
+    const entries=await readSetting('case-directories')||[];
+    const entry=entries.find(e=>'case-directory:'+e.id===key);
+    if(!entry)throw Error('找不到该素材目录，请刷新后重试');
+    const active=await loadDirectory();let isActive=active===entry.handle;
+    if(active&&!isActive)try{isActive=await active.isSameEntry(entry.handle);}catch{}
+    const database=await db();
+    await new Promise((resolve,reject)=>{
+      const tx=database.transaction('settings','readwrite'),store=tx.objectStore('settings');
+      store.put(entries.filter(e=>e!==entry),'case-directories');store.delete(key);
+      if(isActive)store.put(null,'directory');
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('移除目录失败'));
+    });
+    notifyCaseHistoryChanged();
+  });
+}
 export async function replaceCaseLibraryDirectory(key,directory) {
   const entries=await readSetting('case-directories')||[];
   const entry=entries.find(e=>'case-directory:'+e.id===key);
   if(!entry)throw Error('找不到原文件夹记录');
   for(const other of entries)if(other!==entry){let same=false;try{same=await directory.isSameEntry(other.handle);}catch{}if(same)throw Error('该文件夹已属于其他素材目录，请从左侧选择');}
-  entry.handle=directory;await writeSetting('case-directories',entries);notifyCaseHistoryChanged();
+  const active=await loadDirectory();
+  let replaceActive=active===entry.handle;
+  if(active&&!replaceActive)try{replaceActive=await active.isSameEntry(entry.handle);}catch{}
+  entry.handle=directory;await writeSetting('case-directories',entries);
+  if(replaceActive)await saveDirectory(directory);
+  notifyCaseHistoryChanged();
 }
 // Enumerate stored fingerprints only; other roots are not rescanned for every download.
 export async function loadCaseLibraries() {

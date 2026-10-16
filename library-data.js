@@ -7,6 +7,13 @@ export function flattenLibraries(libraries) {
     location:[library.name,record.folder].filter(Boolean).join('／')
   })));
 }
+export function caseDateLabel(record) {
+  for(const [value,prefix]of [[record.downloadedAt,''],[record.importedAt,'导入于 ']]){
+    if(!value)continue;
+    const date=new Date(value);if(Number.isFinite(date.getTime()))return prefix+date.toLocaleDateString('zh-CN');
+  }
+  return '日期未知';
+}
 // The leading number of the folder name is the download order, so it is the natural material order.
 export function folderNumber(record) {
   const match=String(record?.folder||'').match(/^(\d+)/);

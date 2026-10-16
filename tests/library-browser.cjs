@@ -29,6 +29,7 @@ const moved=makeRoot('意式极简-新位置',{'参考/01-客厅':['001.jpg','00
 async function record(root,folder,id,title){let directory=root;for(const name of folder.split('/'))directory=await directory.getDirectoryHandle(name);const images=[];let i=0;for await(const [name,handle]of directory.entries()){const file=await handle.getFile();images.push({name,size:file.size,modified:100,fp:{preview:assets[i++%assets.length]}});}return {id,title,folder,images,sources:[],sourceUrls:['https://example.com/design'],downloadedAt:'2026-10-15T00:00:00Z'};}
 const libraries=[{key:'case-history',name:'默认下载／室内灵感',directory:null,records:[{id:'default',title:'默认下载案例',folder:'01-默认下载',images:[{name:'001.jpg',downloadId:7,fp:{preview:assets[0]}}]}]},{key:'case-directory:style',name:style.name,directory:style,records:[await record(style,'参考/01-客厅','living','客厅案例'),await record(style,'02-卧室','bedroom','卧室案例')]}];
 export const loadCaseLibraries=async()=>libraries.map(l=>({...l,name:l.directory?.name||l.name,records:l.records.map(r=>({...r,images:[...r.images]}))}));
+export async function removeCaseLibrary(key){const index=libraries.findIndex(l=>l.key===key);if(index<0)throw Error('missing library');libraries.splice(index,1);}
 export const loadDirectoryCaseHistory=async root=>libraries.find(l=>l.directory===root)?.records;
 export async function saveDirectoryCaseHistory(root,records){let library=libraries.find(l=>l.directory===root);if(!library){library={key:'case-directory:new',name:root.name,directory:root};libraries.push(library);}library.records=records;}
 export const withCaseHistoryLock=operation=>navigator.locks.request('fixture-index',operation);
@@ -51,6 +52,9 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   const page=await browser.newPage({viewport:{width:1240,height:920}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:'+server.address().port+'/library.html');
   await page.getByText('3 个案例 · 4 张图片',{exact:true}).waitFor();assert.equal(await page.locator('.tile').count(),3);
+  assert.equal(await page.locator('.tile .path').count(),0,'card paths are only available on hover');
+  assert.equal(await page.locator('.tile-cover').first().evaluate(el=>getComputedStyle(el).aspectRatio),'3 / 4');
+  assert.ok(await page.locator('.tile').filter({hasText:'默认下载案例'}).innerText().then(text=>text.includes('日期未知')));
   assert.equal(await page.locator('.sidebar-note').count(),0);
   assert.ok(await page.locator('aside').evaluate(el=>Math.abs(el.getBoundingClientRect().bottom-innerHeight)<2),'directory panel fills the available window height');
   const separator=page.getByRole('separator',{name:'调整左侧栏宽度'});
@@ -104,13 +108,19 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   // Thumbnails never request permission; a deliberate preview can request it.
   await page.evaluate(()=>{__libraryFixture.style.permission='prompt';__libraryFixture.style.policy='denied';__libraryFixture.style.permissionRequests=0;});
   await page.getByRole('button',{name:'打开案例：客厅案例',exact:true}).click();assert.equal(await page.evaluate(()=>__libraryFixture.style.permissionRequests),0);
+  assert.equal(await page.locator('.image-tile small').count(),0,'case pictures show filename only');
+  assert.ok(!(await page.locator('#summary').innerText()).includes('意式极简'),'case heading summary hides folder path');
+  assert.ok(await page.locator('.image-tile .tile-title').first().evaluate(el=>el.getBoundingClientRect().height<25),'filename has no reserved second line');
   await page.getByRole('button',{name:'预览图片：001.jpg',exact:true}).click();await page.getByText('当前显示历史缩略图，请授权读取原图。',{exact:true}).waitFor();
   await page.evaluate(()=>{__libraryFixture.style.policy='granted';});await page.getByRole('button',{name:'授权读取原图',exact:true}).click();await page.waitForFunction(()=>document.getElementById('original').src.startsWith('blob:'));
   await page.getByRole('button',{name:'关闭预览'}).click();
   // Moving the old root can be repaired without copying files.
   await page.evaluate(()=>{__libraryFixture.style.children.clear();__libraryFixture.pickerRoot=__libraryFixture.moved;});
   await page.getByRole('button',{name:'预览图片：001.jpg',exact:true}).click();await page.getByText('原图已移动或删除，请关闭预览后重新关联文件夹。',{exact:true}).waitFor();await page.getByRole('button',{name:'关闭预览'}).click();
-  await page.getByRole('button',{name:'重新关联',exact:true}).click();await page.waitForFunction(()=>document.getElementById('summary').textContent.includes('意式极简-新位置'));
+  assert.equal(await page.locator('#folderActions').count(),0,'folder maintenance is absent from case view');
+  await page.getByRole('button',{name:'管理文件夹',exact:true}).click();
+  await page.getByRole('button',{name:'重新关联：意式极简',exact:true}).click();await page.waitForFunction(()=>document.getElementById('folders').textContent.includes('意式极简-新位置'));
+  await page.getByRole('button',{name:'关闭文件夹管理'}).click();
   await page.getByRole('button',{name:'预览图片：001.jpg',exact:true}).click();await page.waitForFunction(()=>document.getElementById('original').src.startsWith('blob:'));await page.getByRole('button',{name:'关闭预览'}).click();
   await page.locator('#all').click();await page.getByRole('button',{name:'打开案例：默认下载案例',exact:true}).click();await page.getByRole('button',{name:'预览图片：001.jpg',exact:true}).click();await page.getByRole('button',{name:'在文件夹中显示',exact:true}).click();assert.equal(await page.evaluate(()=>__shownDownload),7);await page.getByRole('button',{name:'关闭预览'}).click();
   await page.locator('#all').click();
@@ -130,6 +140,15 @@ window.chrome={downloads:{search:async()=>[{id:7,exists:true,state:'complete'}],
   await page.setViewportSize({width:390,height:900});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'narrow screen does not overflow horizontally');
   if(process.env.LIBRARY_TEST_OUTPUT)await page.screenshot({path:path.join(process.env.LIBRARY_TEST_OUTPUT,'library-implemented-narrow.png'),fullPage:true});
+  await page.setViewportSize({width:1240,height:920});
+  await page.getByRole('button',{name:'管理文件夹',exact:true}).click();
+  await page.getByRole('dialog',{name:'管理文件夹',exact:true}).waitFor();
+  const fileCount=await page.evaluate(()=>globalThis.__libraryFixture.incoming.children.size);
+  await page.getByRole('button',{name:'移除文件夹：项目 B',exact:true}).click();
+  await page.getByRole('button',{name:'移除文件夹：项目 B',exact:true}).waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>globalThis.__libraryFixture.incoming.children.size),fileCount,'removal must not delete files');
+  await page.getByRole('button',{name:'关闭文件夹管理'}).click();
+  assert.equal(await page.locator('#folders').getByText('项目 B',{exact:true}).count(),0);
   assert.deepEqual(errors,[]);
   console.log('PASS: real library page with simulated filesystem: folder navigation, nested case, originals, next image, search, views, import and fingerprinting, permission denial/retry, missing originals, relinking, default download reveal, fixed sidebar with gallery-only scroll, narrow layout');
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}

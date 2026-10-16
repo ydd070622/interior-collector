@@ -82,3 +82,24 @@ body{min-width:0;height:100dvh}
 .case-examples figure { margin:0;flex:1;min-width:0; }
 .case-examples img { display:block;width:100%;max-height:170px;object-fit:contain;background:#eee; }
 .case-examples figcaption { text-align:center;font-size:12px; }
+/* Compact review: fold settings and scroll only the comparisons. */
+#collectionSettings{margin:0;flex-shrink:0;color:inherit}
+#collectionSettings>summary{display:none}
+body.reviewing-case #collectionSettings{margin-bottom:8px;border-bottom:1px solid #e6ded1;padding-bottom:9px}
+body.reviewing-case #collectionSettings>summary{display:list-item;font-size:12px;color:#795637;padding:4px 0}
+body.reviewing-case #collectionSettings[open] .limit-row{margin-top:10px}
+body.reviewing-case .toolbar,body.reviewing-case progress,body.reviewing-case #status{display:none}
+body.reviewing-case main>.case-prompt{margin:2px 0 4px;padding:0;border:0;border-radius:0;background:transparent;font-size:12px}
+body.reviewing-case main:has(#collectionSettings[open]){overflow-y:auto}
+body.reviewing-case main:has(#collectionSettings[open])>.case-prompt{flex:1 0 360px}
+.case-prompt h3{margin:3px 0 12px;font-size:18px;font-weight:500}
+.case-prompt select{font-size:12px;padding:10px;background:#fffdfa}
+.case-prompt p{font-size:12px;color:#795637;margin:10px 0}
+.case-examples{container-type:size;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:20px 18px;padding:2px 5px 12px 0}
+.case-examples img{height:min(270px,calc(100cqh - 35px));min-height:90px;max-height:none;border-radius:7px;background:#eee7dd;object-fit:contain}
+.case-examples figcaption{font-size:11px;text-align:left;color:#998873;padding-top:6px}
+.case-footer{margin-top:10px;background:#f7f3ed}
+.case-actions{display:grid;grid-template-columns:1fr 1fr;background:transparent;padding-top:12px;gap:8px}
+.case-actions button{font-size:12px;padding:9px;background:transparent}
+.case-actions button:first-child{grid-column:1/-1;padding:11px;background:#8c623e}
+.case-footer p[role=alert]{font-size:12px;max-height:54px;overflow-y:auto;color:#a04331}

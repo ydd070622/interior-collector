@@ -86,8 +86,16 @@ async function download(index) {
     // Only the visible popup can request filesystem permission with the user's click.
     const directory=await loadDirectory();
     if(directory && await directory.requestPermission({mode:'readwrite'})!=='granted')throw new Error('请重新选择保存文件夹并授权写入');
+    if(directory){
+      const entries=directory.entries();
+      try{await entries.next();}finally{await entries.return?.();}
+      showFolder(directory);
+    }
     await job('download',{index,format:$('format').value,quality:1});
-  }catch(e){$('status').textContent=e.message;}
+  }catch(e){
+    $('status').textContent=e.name==='NotFoundError'?'保存文件夹已移动、重命名或删除，请点击“保存文件夹”重新选择后下载。':e.message;
+    if(e.name==='NotFoundError')$('folder').focus();
+  }
 }
 chrome.runtime.onMessage.addListener(message=>{if(message.type==='JOB_UPDATE')render(message.state);});
 $('rescan').onclick=startScan;

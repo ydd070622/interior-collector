@@ -1,17 +1,21 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const history=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync(new URL('../case-history.js',import.meta.url),'utf8')).toString('base64'));
-let records=[],writes=[],choice={action:'merge',targetId:'case-history|old'},fail=false,indexFail=false,prompts=0,externalLibraries=[],foreignSaved;
+const upgrade=await import('data:text/javascript;base64,'+Buffer.from(fs.readFileSync(new URL('../image-upgrade.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'')).toString('base64'));
+let records=[],writes=[],choice={action:'merge',targetId:'case-history|old'},fail=false,indexFail=false,prompts=0,externalLibraries=[],foreignSaved,forcedRefresh,upgradeMode=false,upgradeWrites=0,extraDetail=true;
 const pixels=seed=>Array.from({length:1024},(_,i)=>i%4===3?255:(Math.floor(i/4)*37+seed)%256);
 const fp=seed=>history.describePixels(pixels(seed),1200,800);
-globalThis.__caseDeps={...history,
+globalThis.__caseDeps={...history,...upgrade,
+  hasAdditionalDetail:()=>extraDetail,
+  replaceWithBackup:async(directory,previous)=>{assert.equal(directory,caseDirectory);upgradeWrites++;return {size:20,modified:101,backup:'.interior-backups/old-'+previous.name};},
+  refreshCaseRecord:(directory,record,status,options)=>forcedRefresh&&options?.rebuild?forcedRefresh(record):history.refreshCaseRecord(directory,record,status),
   withCaseHistoryLock:operation=>operation(),
   loadDirectoryCaseHistory:async()=>undefined,saveDirectoryCaseHistory:async(directory,value)=>{foreignSaved={directory,records:structuredClone(value)};},
   loadCaseLibraries:async()=>[{key:'case-history',name:'默认下载',directory:null,records:structuredClone(records)},...externalLibraries],
   loadCaseHistory:async()=>structuredClone(records),saveCaseHistory:async value=>{if(indexFail)throw Error('index full');records=structuredClone(value);},
   uniqueFile:async(directory,name)=>directory.getFileHandle(name,{create:true}),safeTitle:s=>s,openNoteDirectory:async()=>{},
   fetchImage:async url=>({bitmap:{url,close(){}}}),convertImage:async bitmap=>{if(fail)throw Error('write failed');return bitmap.url;},
-  fingerprint:async bitmap=>fp(Number(bitmap.url)),
+  fingerprint:async bitmap=>({...fp(Number(bitmap.url)),...(upgradeMode?{width:2400,height:1600}:{})}),
 };
 let source=fs.readFileSync(new URL('../case-download.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/gm,'');
 source='const {'+Object.keys(globalThis.__caseDeps).join(',')+'}=globalThis.__caseDeps;\n'+source;
@@ -50,3 +54,22 @@ externalLibraries=[{key:'case-directory:style',name:'意式极简',directory:roo
 foreignWrites=0;choice={action:'merge',targetId:'case-directory:style|old'};
 result=await saveCases({...options,destination:currentRoot});assert.equal(result.success,1);assert.equal(result.skipped,2);assert.equal(foreignWrites,1);assert.equal(foreignSaved.directory,root);
 console.log('PASS: selected-folder to selected-folder merge writes exclusively to original root');
+records=[];externalLibraries=[{key:'case-directory:style',name:'意式极简',directory:root,records:[structuredClone(old)]}];
+forcedRefresh=record=>({...record,images:[...old.images,{name:'003.png',size:10,modified:99,fp:fp(150)}]});
+let updatedPrompt;
+await saveCases({...options,decide:async prompt=>{updatedPrompt=prompt;return {action:'skip'};}});
+assert.equal(updatedPrompt.matches[0].shared,3,'prompt must use refreshed original files, not the incomplete historical count');
+forcedRefresh=undefined;
+console.log('PASS: original case is rebuilt before showing the duplicate count');
+upgradeMode=true;upgradeWrites=0;records=[];externalLibraries=[{key:'case-directory:style',name:'意式极简',directory:root,records:[structuredClone(old)]}];
+files.clear();files.set('001.png',{size:10,lastModified:99});files.set('002.png',{size:10,lastModified:99});
+globalThis.createImageBitmap=async()=>({close(){}});
+let upgradePrompt;
+result=await saveCases({...options,decide:async prompt=>{upgradePrompt=prompt;return {action:'merge',targetId:'case-directory:style|old'};}});
+assert.equal(upgradePrompt.matches[0].upgradeCandidates,2);assert.equal(result.upgraded,2);assert.equal(upgradeWrites,2);assert.equal(result.success,3);assert.equal(result.skipped,0);
+assert.equal(foreignSaved.records[0].images.length,3,'upgrades replace metadata rather than append new images');
+assert.equal(foreignSaved.records[0].images[0].name,'001.png');assert.equal(foreignSaved.records[0].images[0].fp.width,2400);
+extraDetail=false;upgradeWrites=0;records=[];externalLibraries[0].records=[structuredClone(old)];files.delete('003.png');
+result=await saveCases({...options,decide:async()=>({action:'merge',targetId:'case-directory:style|old'})});
+assert.equal(result.upgraded,0);assert.equal(result.skipped,2);assert.equal(upgradeWrites,0,'simple enlarged copies never replace originals');
+console.log('PASS: merge reports upgrade candidates, preserves names and image count, persists new fingerprints, skips simple enlargements');

@@ -17,7 +17,11 @@ globalThis.__libraryTest={cached:[record],save:async(d,r)=>saved={directory:d,re
 const fileModule=encode('export const loadDirectoryCaseHistory=async()=>globalThis.__libraryTest.cached;export const saveDirectoryCaseHistory=(...args)=>globalThis.__libraryTest.save(...args);export const withCaseHistoryLock=fn=>fn();export const replaceCaseLibraryDirectory=(...args)=>globalThis.__libraryTest.replace(...args);');
 const historyModule=encode(fs.readFileSync(new URL('../case-history.js',import.meta.url),'utf8'));
 const dataSource=fs.readFileSync(new URL('../library-data.js',import.meta.url),'utf8').replace("'./files.js'",JSON.stringify(fileModule)).replace("'./case-history.js'",JSON.stringify(historyModule));
-const {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory}=await import(encode(dataSource));
+const {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel}=await import(encode(dataSource));
+assert.equal(caseDateLabel({}),'日期未知');
+assert.equal(caseDateLabel({downloadedAt:'invalid'}),'日期未知');
+assert.match(caseDateLabel({importedAt:'2026-10-15T00:00:00Z'}),/^导入于 /);
+assert.ok(!caseDateLabel({downloadedAt:'2026-10-14T00:00:00Z',importedAt:'2026-10-15T00:00:00Z'}).startsWith('导入于 '));
 const libraries=[{key:'a',name:'风格素材',directory,records:[record]},{key:'b',name:'项目',directory:null,records:[{...record,id:'one',folder:'01-卧室',title:'卧室',updatedAt:'2026-10-15'}]}];
 const entries=flattenLibraries(libraries);assert.equal(entries.length,2);assert.notEqual(entries[0].key,entries[1].key);
 assert.equal(selectLibraryCases(entries,{query:'原木风'})[0].record.title,'客厅');assert.equal(selectLibraryCases(entries,{query:'001.png'}).length,2);

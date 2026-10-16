@@ -1,5 +1,5 @@
-import {loadCaseLibraries} from './files.js';
-import {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory} from './library-data.js';
+import {loadCaseLibraries,removeCaseLibrary} from './files.js';
+import {flattenLibraries,selectLibraryCases,safePreview,readLibraryImage,importLibraryDirectory,relinkLibraryDirectory,caseDateLabel} from './library-data.js';
 
 const $=id=>document.getElementById(id);
 // ?view=compact marks the narrow window opened beside the collection window.
@@ -61,7 +61,7 @@ const state={folder:'all',caseKey:null,mode:'cases',query:'',sort:'folder-desc',
 let libraries=[],entries=[],byKey=new Map(),busy=false,reloadTimer,dirty=false,viewerEntry=null,viewerIndex=0,viewerToken=0,originalUrl=null;
 const thumbnails=new Map(),pendingThumbs=new Set(),thumbnailQueue=[];let thumbnailActive=0;
 const imageObserver=new IntersectionObserver(changes=>{for(const change of changes)if(change.isIntersecting){imageObserver.unobserve(change.target);thumbnailQueue.push(change.target);drainThumbnails();}},{rootMargin:'250px'});
-const dateLabel=record=>{const value=record.downloadedAt;return value?new Date(value).toLocaleDateString('zh-CN'):'导入素材';};
+const dateLabel=caseDateLabel;
 const status=text=>{$('syncState').textContent=text;};
 function sidebarIcon(kind){
   const paths={images:'<rect x="7" y="3" width="13" height="15" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h10M10 13l3-3 4 4M15 7h.01"/>',folder:'<path d="M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',panel:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>'};
@@ -105,20 +105,13 @@ function renderFolders(){
     return '<details class="folder-tree" data-tree-key="'+escape(treeKey)+'" '+(open?'open':'')+'><summary><button class="folder-button" data-action="folder" data-key="'+escape(library.key)+'" aria-expanded="'+open+'" aria-current="'+(selected?'page':'false')+'">'+sidebarIcon('folder')+'<span class="label" title="'+escape(library.name)+'">'+escape(library.name)+'</span><span class="short-label" aria-hidden="true">'+escape(Array.from(library.name).slice(0,4).join(''))+'</span><small>'+String(counts.get(library.key)||0)+'</small></button></summary>'+folderTree(rows.slice(0,200).map(entry=>({entry,parts:(entry.record.folder||'').split('/').filter(Boolean)})),0,treeKey)+(rows.length>200?'<button class="folder-button" data-action="folder" data-key="'+escape(library.key)+'">查看全部 '+rows.length+' 个案例</button>':'')+'</details>';
   }).join('');
 }
-function renderActions(){
-  const library=selectedLibrary();$('folderActions').replaceChildren();
-  if(!library?.directory)return;
-  for(const [label,action]of [['授权读取','authorize-folder'],['更新索引','scan-folder'],['重新关联','relink']]){
-    const button=document.createElement('button');button.textContent=label;button.dataset.action=action;button.dataset.key=library.key;button.disabled=busy;$('folderActions').append(button);
-  }
-}
 function imageMarkup(entry,index){
   const image=entry.record.images[index],preview=safePreview(image);
   return '<img '+(preview?'src="'+escape(preview)+'"':'')+' alt="'+escape(image.name||'案例封面')+'" loading="lazy" data-entry="'+escape(entry.key)+'" data-index="'+index+'">';
 }
 function tile(entry,index){
   const isCase=index===undefined,imageIndex=isCase?0:index,image=entry.record.images[imageIndex];
-  return '<button class="tile '+(isCase?'':'image-tile')+'" data-action="'+(isCase?'case':'preview')+'" data-key="'+escape(entry.key)+'" data-index="'+imageIndex+'" aria-label="'+escape((isCase?'打开案例：':'预览图片：')+(isCase?entry.record.title:image.name))+'"><div class="tile-cover">'+imageMarkup(entry,imageIndex)+(isCase?'<span class="tile-count">'+entry.record.images.length+' 张</span>':'')+'</div><div class="tile-info"><span class="tile-title" title="'+escape(isCase?entry.record.title:image.name)+'">'+escape(isCase?entry.record.title:image.name)+'</span><small>'+escape(isCase?dateLabel(entry.record):entry.record.title)+'</small><small class="path" title="'+escape(entry.location)+'">'+escape(entry.location)+'</small></div></button>';
+  return '<button class="tile '+(isCase?'':'image-tile')+'" data-action="'+(isCase?'case':'preview')+'" data-key="'+escape(entry.key)+'" data-index="'+imageIndex+'" aria-label="'+escape((isCase?'打开案例：':'预览图片：')+(isCase?entry.record.title:image.name))+'"><div class="tile-cover">'+imageMarkup(entry,imageIndex)+(isCase?'<span class="tile-count">'+entry.record.images.length+' 张</span>':'')+'</div><div class="tile-info" title="'+escape(entry.location)+'"><span class="tile-title" title="'+escape(isCase?entry.record.title:image.name)+'">'+escape(isCase?entry.record.title:image.name)+'</span>'+(isCase?'<small>'+escape(dateLabel(entry.record))+'</small>':'')+'</div></button>';
 }
 function renderGallery(){
   imageObserver.disconnect();thumbnailQueue.length=0;const entry=selectedEntry(),cases=entry?[entry]:currentCases(),imageMode=!!entry||state.mode==='images';
@@ -133,9 +126,9 @@ function renderGallery(){
 function render(){
   const entry=selectedEntry(),library=selectedLibrary(),cases=entry?[entry]:currentCases();
   $('heading').textContent=entry?entry.record.title:library?library.name:'全部素材';
-  $('summary').textContent=entry?entry.location+' · '+entry.record.images.length+' 张图片 · '+dateLabel(entry.record):cases.length+' 个案例 · '+cases.reduce((sum,e)=>sum+e.record.images.length,0)+' 张图片';
+  $('summary').textContent=entry?entry.record.images.length+' 张图片 · '+dateLabel(entry.record):cases.length+' 个案例 · '+cases.reduce((sum,e)=>sum+e.record.images.length,0)+' 张图片';
   $('breadcrumbs').replaceChildren();
-  if(entry){for(const [label,folder]of [['素材库','all'],[entry.library.name,entry.library.key]]){const button=document.createElement('button');button.textContent=label;button.onclick=()=>changeFolder(folder);$('breadcrumbs').append(button,document.createTextNode(' ／ '));}
+  if(entry){const button=document.createElement('button');button.textContent='‹ 返回素材库';button.onclick=()=>changeFolder(entry.library.key);$('breadcrumbs').append(button);
     for(const raw of entry.record.sourceUrls||[]){try{const url=new URL(raw);if(!/^https?:$/.test(url.protocol))continue;const link=document.createElement('a');link.className='source-link';link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent='查看原文';$('breadcrumbs').append(link);}catch{}}
   }
   $('toolbar').hidden=!!entry;$('caseView').setAttribute('aria-pressed',String(state.mode==='cases'));$('imageView').setAttribute('aria-pressed',String(state.mode==='images'));
@@ -144,7 +137,7 @@ function render(){
   for(const [key,name]of [['all','全部'],...libraries.filter(l=>l.records.length).map(l=>[l.key,l.name])]){
     const button=document.createElement('button');button.textContent=name;button.dataset.action='filter-library';button.dataset.key=key;button.setAttribute('aria-pressed',String(state.folder===key));$('folderFilters').append(button);
   }
-  renderFolders();renderActions();renderGallery();
+  renderFolders();renderGallery();
 }
 function changeFolder(folder){state.folder=folder;state.caseKey=null;state.query='';state.limit=120;$('search').value='';notice('');render();}
 async function reload(){
@@ -181,7 +174,7 @@ async function drainThumbnails(){
   if(thumbnailActive<3)drainThumbnails();
 }
 async function operation(task){
-  if(busy)return;busy=true;$('import').disabled=true;$('refresh').disabled=true;renderActions();notice('');
+  if(busy)return;busy=true;$('import').disabled=true;$('refresh').disabled=true;notice('');
   try{await task();status('素材索引已更新');}
   catch(error){if(error.name!=='AbortError')notice(error.message);}
   finally{busy=false;$('import').disabled=false;$('refresh').disabled=false;await reload();}
@@ -198,10 +191,6 @@ async function importFolder(){
   // Invoke the picker directly in the click turn; no real files are copied or moved.
   const directory=await showDirectoryPicker({id:'interior-material-library',mode:'read'});
   await operation(()=>importLibraryDirectory(directory,status));
-}
-async function relinkFolder(library){
-  const directory=await showDirectoryPicker({id:'interior-material-library',mode:'read'});
-  await operation(()=>relinkLibraryDirectory(library,directory,status));
 }
 function cleanOriginal(){if(originalUrl){URL.revokeObjectURL(originalUrl);originalUrl=null;}}
 function fitViewer(){
@@ -239,9 +228,6 @@ document.addEventListener('click',event=>{
   }
   else if(action==='case'){state.caseKey=key;state.limit=120;notice('');render();window.scrollTo({top:0});}
   else if(action==='preview'){const entry=byKey.get(key);if(entry)openPreview(entry,Number(target.dataset.index));}
-  else if(action==='authorize-folder'){const library=libraries.find(l=>l.key===key);authorizeFolder(library).catch(error=>notice(error.message));}
-  else if(action==='scan-folder'){const library=libraries.find(l=>l.key===key);operation(()=>scanFolder(library));}
-  else if(action==='relink'){const library=libraries.find(l=>l.key===key);relinkFolder(library).catch(error=>{if(error.name!=='AbortError')notice(error.message);});}
 });
 $('home').onclick=event=>{event.preventDefault();changeFolder('all');};$('all').onclick=()=>changeFolder('all');
 $('search').oninput=()=>{state.query=$('search').value;state.limit=120;render();};
@@ -265,6 +251,47 @@ $('original').onerror=()=>{if(originalUrl&&$('viewer').open)$('viewerStatus').te
 $('showDownload').onclick=async()=>{try{const image=viewerEntry.record.images[viewerIndex];const [download]=await chrome.downloads.search({id:image.downloadId});if(!download||download.exists===false)throw Error('下载文件已移动或删除，请导入新的保存文件夹');chrome.downloads.show(image.downloadId);}catch(error){$('viewerStatus').textContent=error.message;}};
 document.addEventListener('keydown',event=>{if(!$('viewer').open)return;if(event.key==='ArrowLeft'){event.preventDefault();stepImage(-1);}if(event.key==='ArrowRight'){event.preventDefault();stepImage(1);}});
 const historyChannel=new BroadcastChannel('interior-case-history');historyChannel.onmessage=()=>{clearTimeout(reloadTimer);reloadTimer=setTimeout(reload,800);};
+function renderManagedFolders(){
+  $('managedFolders').replaceChildren();
+  const roots=libraries.filter(l=>l.directory);
+  if(!roots.length){$('managedFolders').textContent='没有已导入的文件夹';return;}
+  for(const library of roots){
+    const row=document.createElement('div');row.className='managed-folder';
+    const label=document.createElement('div'),name=document.createElement('strong'),count=document.createElement('small');
+    name.textContent=library.name;count.textContent=library.records.reduce((n,r)=>n+(r.images?.length||0),0)+' 张图片';label.append(name,count);
+    const button=document.createElement('button');button.textContent='移除';button.setAttribute('aria-label','移除文件夹：'+library.name);
+    button.onclick=async()=>{
+      $('managerError').textContent='';busy=true;
+      $('managedFolders').querySelectorAll('button').forEach(b=>b.disabled=true);
+      try{await removeCaseLibrary(library.key);state.folder='all';state.caseKey=null;}
+      catch(error){$('managerError').textContent=error.message;}
+      finally{busy=false;await reload();renderManagedFolders();}
+    };
+    const actions=document.createElement('div');actions.className='managed-folder-actions';
+    const authorize=document.createElement('button');authorize.textContent='授权读取';authorize.hidden=true;
+    authorize.setAttribute('aria-label','授权读取：'+library.name);
+    const scan=document.createElement('button');scan.textContent='更新索引';scan.setAttribute('aria-label','更新索引：'+library.name);
+    const relink=document.createElement('button');relink.textContent='重新关联';relink.setAttribute('aria-label','重新关联：'+library.name);
+    const run=async task=>{
+      if(busy)return;busy=true;$('managerError').textContent='';
+      $('managedFolders').querySelectorAll('button').forEach(b=>b.disabled=true);
+      $('import').disabled=true;$('refresh').disabled=true;
+      try{await task();}
+      catch(error){if(error.name!=='AbortError')$('managerError').textContent=error.message;}
+      finally{busy=false;$('import').disabled=false;$('refresh').disabled=false;await reload();if($('folderManager').open)renderManagedFolders();}
+    };
+    authorize.onclick=()=>run(()=>authorizeFolder(library));
+    scan.onclick=()=>run(()=>scanFolder(library));
+    relink.onclick=()=>run(async()=>{
+      const directory=await showDirectoryPicker({id:'interior-material-library',mode:'read'});
+      await relinkLibraryDirectory(library,directory,status);
+    });
+    Promise.resolve().then(()=>library.directory.queryPermission({mode:'read'})).then(permission=>{if(row.isConnected)authorize.hidden=permission==='granted';}).catch(()=>{if(row.isConnected)authorize.hidden=false;});
+    actions.append(authorize,scan,relink,button);row.append(label,actions);$('managedFolders').append(row);
+  }
+}
+$('manageFolders').onclick=()=>{$('managerError').textContent='';renderManagedFolders();$('folderManager').showModal();};
+$('closeFolderManager').onclick=()=>$('folderManager').close();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)reload();});window.addEventListener('focus',()=>{if(!busy&&!$('viewer').open)reload();});
 window.addEventListener('pagehide',()=>{cleanOriginal();historyChannel.close();imageObserver.disconnect();for(const url of thumbnails.values())URL.revokeObjectURL(url);});
 reload();

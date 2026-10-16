@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+let failBackup=false,failReplace=false,changed=false;
+const old=new Blob(['original bytes']),high=new Blob(['high resolution image bytes']);
+const stored=new Map();
+function file(name,initial,isBackup=false){let blob=initial,modified=100;return {name,getFile:async()=>Object.assign(blob,{lastModified:modified}),createWritable:async()=>{let pending;return {write:async value=>{if(isBackup&&failBackup)throw Error('backup failed');if(!isBackup&&failReplace)throw Error('replace failed');pending=value;},close:async()=>{blob=pending;modified++;if(!isBackup)changed=true;},abort:async()=>{pending=null;}};}};}
+const target=file('001.png',old);
+const directory={getFileHandle:async()=>target,getDirectoryHandle:async(name,options)=>{assert.equal(name,'.interior-backups');assert.equal(options.create,true);return {};}};
+globalThis.__upgradeUniqueFile=async(directory,name)=>{const handle=file(name,new Blob(),true);stored.set(name,handle);return handle;};
+const source=fs.readFileSync(new URL('../image-upgrade.js',import.meta.url),'utf8').replace(/^import .*;\r?\n/,'const uniqueFile=(...args)=>globalThis.__upgradeUniqueFile(...args);\n');
+const {replaceWithBackup,canUpgradeImage}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+const previous={name:'001.png',size:old.size,modified:100,fp:{width:640,height:853}};
+assert.equal(canUpgradeImage({fp:{width:1080,height:1440}},previous),true);
+assert.equal(canUpgradeImage({fp:{width:640,height:853}},previous),false);
+assert.equal(canUpgradeImage({fp:{width:320,height:426}},previous),false);
+failBackup=true;await assert.rejects(replaceWithBackup(directory,previous,high),/backup failed/);assert.equal(changed,false);
+failBackup=false;failReplace=true;await assert.rejects(replaceWithBackup(directory,previous,high),/replace failed/);assert.equal(changed,false);assert.equal(await (await target.getFile()).text(),'original bytes');
+failReplace=false;const result=await replaceWithBackup(directory,previous,high);
+assert.equal(result.size,high.size);assert.equal(await (await target.getFile()).text(),'high resolution image bytes');
+assert.equal(await (await stored.get(result.backup.split('/')[1]).getFile()).text(),'original bytes');
+await assert.rejects(replaceWithBackup(directory,previous,high),/原图片已变化/);
+console.log('PASS: larger version eligibility, backup before replacement, backup/write failures preserve old image, successful replacement retains recovery copy, changed originals rejected');
